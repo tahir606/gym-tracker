@@ -1,0 +1,8 @@
+node_modules
+.wrangler
+.dev.vars
+ACCESS_KEY.txt
+wrangler.deploy.jsonc
+# personal data imports
+import/
+.DS_Store

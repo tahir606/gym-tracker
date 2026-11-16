@@ -1,0 +1,10 @@
+{
+  // Local development config. ./deploy.sh writes wrangler.deploy.jsonc (git-ignored) with your real database id.
+  "name": "gym-tracker",
+  "main": "src/index.js",
+  "compatibility_date": "2025-06-01",
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "gym-db", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ]
+}

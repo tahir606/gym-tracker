@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1013">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gym Log">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<title>Gym Log</title>
+<script>try{var t=JSON.parse(localStorage.getItem("gt_theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<style>
+:root{--bg:#0e1013;--card:#181b20;--card2:#20242b;--line:#2a2f38;--text:#eef0f3;--muted:#8b93a1;--accent:#c6f432;--accent-ink:#141a00;--danger:#ff6b6b;--gold:#ffc94d;--tabs-bg:rgba(14,16,19,.94);--g-chest:#3987e5;--g-back:#d95926;--g-shoulders:#199e70;--g-arms:#c98500;--g-legs:#d55181;--g-core:#0ca30c;--g-other:#7c8594;color-scheme:dark}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f4f5f7;--card:#ffffff;--card2:#eceef2;--line:#d9dde4;--text:#14171c;--muted:#5d6673;--accent:#4d7c0f;--accent-ink:#ffffff;--danger:#cf3a3a;--gold:#ffc94d;--tabs-bg:rgba(255,255,255,.94);--g-chest:#2a78d6;--g-back:#eb6834;--g-shoulders:#1baf7a;--g-arms:#eda100;--g-legs:#e87ba4;--g-core:#008300;--g-other:#8a93a0;color-scheme:light}}
+:root[data-theme="light"]{--bg:#f4f5f7;--card:#ffffff;--card2:#eceef2;--line:#d9dde4;--text:#14171c;--muted:#5d6673;--accent:#4d7c0f;--accent-ink:#ffffff;--danger:#cf3a3a;--gold:#ffc94d;--tabs-bg:rgba(255,255,255,.94);--g-chest:#2a78d6;--g-back:#eb6834;--g-shoulders:#1baf7a;--g-arms:#eda100;--g-legs:#e87ba4;--g-core:#008300;--g-other:#8a93a0;color-scheme:light}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+#main{max-width:640px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 16px 24px}
+h1{font-size:26px;margin:6px 0 14px;letter-spacing:-.02em}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:22px 0 8px;font-weight:600}
+button,input,select,textarea{font:inherit;color:inherit}
+input,select,textarea{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;outline:none;min-width:0}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:64px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.btn{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:active{transform:scale(.98)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--danger)}
+.btn.block{display:block;width:100%;padding:13px}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted);padding:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.card.tap{cursor:pointer}
+.row{display:flex;align-items:center;gap:10px}
+.row>.grow{flex:1;min-width:0}
+.muted{color:var(--muted)}.small{font-size:13px}.right{text-align:right}
+.title{font-weight:650}
+.trunc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.tile b{display:block;font-size:22px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.tile span{font-size:12px;color:var(--muted)}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;background:var(--gold);color:#2b1f00;vertical-align:middle}
+.badge.w{background:var(--card2);color:var(--muted);border:1px solid var(--line)}
+.set{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;padding:8px 2px;border-top:1px solid var(--line);cursor:pointer;font-variant-numeric:tabular-nums}
+.set .n{color:var(--muted);font-size:13px}
+.addset{display:grid;grid-template-columns:1fr 1fr 46px 52px;gap:8px;margin-top:10px}
+.addset input{text-align:center;padding:10px 4px}
+.addset .btn{padding:10px 0}
+.toggle.on{background:var(--card2);border-color:var(--accent);color:var(--accent)}
+.empty{text-align:center;color:var(--muted);padding:36px 12px}
+#tabs{position:fixed;left:0;right:0;bottom:0;background:var(--tabs-bg);backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom);z-index:5}
+#tabs button{flex:1;max-width:128px;background:none;border:0;padding:9px 0 8px;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer}
+#tabs button svg{display:block;margin:0 auto 3px;width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#tabs button.on{color:var(--accent)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;display:none;align-items:flex-end;justify-content:center}
+#modal.open{display:flex}
+#sheet{background:var(--card);border:1px solid var(--line);border-radius:18px 18px 0 0;width:100%;max-width:640px;max-height:88vh;overflow:auto;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+#sheet h3{margin:0 0 10px;font-size:18px}
+.pick{padding:11px 4px;border-top:1px solid var(--line);cursor:pointer}
+#toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:99px;font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:30;white-space:nowrap}
+#toast.show{opacity:1}
+.chart{width:100%;height:auto;display:block}
+.bars{display:flex;align-items:flex-end;gap:5px;height:70px}
+.bars i{flex:1;background:var(--accent);border-radius:3px 3px 0 0;min-height:2px;opacity:.9}
+.bars i.z{background:var(--line)}
+code{background:var(--card2);padding:2px 6px;border-radius:6px;font-size:13px;word-break:break-all}
+.hdr{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.hdr input.name{font-size:20px;font-weight:700;background:none;border-color:transparent;padding:6px 4px}
+.hdr input.name:focus{border-color:var(--line)}
+#rest{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700;font-size:14px;white-space:nowrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+#tabs button{font-size:10px}
+#tip{position:fixed;display:none;z-index:40;background:var(--text);color:var(--bg);font-size:12px;font-weight:600;padding:5px 9px;border-radius:8px;pointer-events:none;max-width:260px;white-space:pre-line}
+svg.chart{touch-action:pan-y;cursor:crosshair}
+.chips{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.chip{background:var(--card2);border:1px solid var(--line);border-radius:99px;padding:6px 13px;font-size:13px;font-weight:600;cursor:pointer;color:var(--muted)}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+.scope{font-size:11px;color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0;margin-left:6px}
+.vb-plot{display:flex;align-items:flex-end;gap:3px;height:110px;border-bottom:1px solid var(--line)}
+.vb-col{flex:1;height:100%;display:flex;flex-direction:column-reverse;gap:2px;min-width:0;cursor:default}
+.vb-col i{display:block;background:var(--accent);border-radius:4px 4px 0 0;min-height:0}
+.vb-col.stack i{border-radius:2px}
+.vb-x{display:flex;gap:3px;margin-top:4px}
+.vb-x span{flex:1;text-align:center;font-size:10px;color:var(--muted);min-width:0;overflow:hidden;white-space:nowrap}
+.vb-cap{margin-bottom:6px}
+.hb-row{display:grid;grid-template-columns:minmax(0,38%) 1fr auto;gap:10px;align-items:center;padding:5px 0;font-size:14px}
+.hb-row.tap{cursor:pointer}
+.hb-track{height:10px;background:var(--card2);border-radius:5px;overflow:hidden}
+.hb-track i{display:block;height:100%;border-radius:0 5px 5px 0;background:var(--accent)}
+.hb-row b{font-variant-numeric:tabular-nums;font-size:13px;min-width:26px;text-align:right}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.hscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.hl{margin:0;padding-left:18px}.hl li{margin:5px 0}
+.spark{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.spark .tile{cursor:pointer;min-width:0}
+.spark svg{display:block;width:100%;height:30px;margin:6px 0 4px}
+.spark .nm{font-size:13px;font-weight:650}
+.prrow{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.prrow:first-child{border-top:0}
+</style>
+</head>
+<body>
+<div id="main"></div>
+<nav id="tabs" hidden>
+  <button data-a="tab" data-t="home"><svg viewBox="0 0 24 24"><path d="M6 6v12M18 6v12M2.5 9v6M21.5 9v6M6 12h12"/></svg>Log</button>
+  <button data-a="tab" data-t="history"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>History</button>
+  <button data-a="tab" data-t="exercises"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Exercises</button>
+  <button data-a="tab" data-t="prs"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4M12 14v4M8.5 20h7"/></svg>PRs</button>
+  <button data-a="tab" data-t="insights"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Insights</button>
+  <button data-a="tab" data-t="more"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>Me</button>
+</nav>
+<div id="modal"><div id="sheet"></div></div>
+<div id="toast"></div>
+<div id="tip"></div>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (n) => (n == null || n === '' ? '' : String(+(+n).toFixed(2)));
+const big = (n) => (n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k' : fmt(Math.round(n)));
+const pad = (n) => String(n).padStart(2, '0');
+const localDate = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const niceDate = (s) => {
+  if (!s) return '';
+  if (s === localDate()) return 'Today';
+  const d = new Date(s + 'T12:00');
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+};
+const store = {
+  get: (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+function applyTheme(t) {
+  store.set('gt_theme', t === 'system' ? null : t);
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  syncThemeColor();
+}
+function syncThemeColor() {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+}
+syncThemeColor();
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncThemeColor);
+const GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Other'];
+const EQUIP = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other'];
+
+const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: 'kg', exercises: [], warm: {}, restAt: 0 };
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { Authorization: 'Bearer ' + S.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) { logout(); throw new Error('Wrong access key'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => t.classList.remove('show'), 2200);
+}
+function modal(html) { $('#sheet').innerHTML = html; $('#modal').classList.add('open'); }
+function closeModal() { $('#modal').classList.remove('open'); }
+// Sets noted as "plates" (machine stack counts) show that unit; sets with no rep count show the weight alone.
+const unitOf = (s) => (/^plates\b/.test(s.notes || '') ? 'plates' : S.unit);
+const noteOf = (s) => (s.notes || '').replace(/^plates(\s*·\s*)?/, '');
+const setText = (s) => (s.weight > 0 ? `${fmt(s.weight)} ${unitOf(s)}${s.reps ? ` × ${s.reps}` : ''}` : `${s.reps} reps`);
+const shortSet = (s) => (s.weight > 0 ? `${fmt(s.weight)}${unitOf(s) === 'plates' ? ' pl' : ''}${s.reps ? `×${s.reps}` : ''}` : `${s.reps}`);
+const recText = (r) => `${fmt(r.weight)} ${r.unit || S.unit}${r.reps ? ` × ${r.reps}` : ''}`;
+const opts = (list, sel) => list.map((o) => `<option${o === sel ? ' selected' : ''}>${esc(o)}</option>`).join('');
+
+// ---------- charts ----------
+let CH = {}, chN = 0;
+const GROUP_COLORS = { Chest: 'var(--g-chest)', Back: 'var(--g-back)', Shoulders: 'var(--g-shoulders)', Arms: 'var(--g-arms)', Legs: 'var(--g-legs)', Core: 'var(--g-core)' };
+const groupColor = (g) => GROUP_COLORS[g] || 'var(--g-other)';
+const tipAttr = (t) => (t ? ` data-tip="${esc(t)}"` : '');
+const UD = (str) => new Date(str + 'T00:00:00Z');
+const iso = (d) => d.toISOString().slice(0, 10);
+
+// Line chart with hover crosshair. points: [{x: label, y, avg?}] - when avg is present the raw values recede and the average leads.
+function lineChart(points, unit = '', opt = {}) {
+  if (points.length < 2) return '<div class="muted small">Not enough data yet for a trend.</div>';
+  const W = 360, H = 190, px = 8, pt = 26, pb = 22;
+  const hasAvg = points[0].avg != null;
+  const ys = points.flatMap((p) => (hasAvg ? [p.y, p.avg] : [p.y]));
+  let lo = Math.min(...ys), hi = Math.max(...ys);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const X = (i) => px + (i * (W - 2 * px)) / (points.length - 1);
+  const Y = (v) => pt + (1 - (v - lo) / (hi - lo)) * (H - pt - pb);
+  const path = (k) => points.map((p, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(p[k]).toFixed(1)}`).join('');
+  const id = 'c' + ++chN, last = points.length - 1, main = hasAvg ? 'avg' : 'y';
+  CH[id] = { points, unit, W, H, px, hasAvg, ys: points.map((p) => Y(p[main])) };
+  const rawYs = points.map((p) => p.y);
+  return `<svg class="chart" data-ch="${id}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label || 'Trend chart')}">
+    <line x1="${px}" x2="${W - px}" y1="${H - pb}" y2="${H - pb}" stroke="var(--line)"/>
+    ${hasAvg ? points.map((p, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2" fill="var(--muted)" opacity=".7"/>`).join('')
+      : `<path d="${path('y')}L${X(last)},${H - pb}L${X(0)},${H - pb}Z" fill="var(--accent)" opacity=".1"/>`}
+    <path d="${path(main)}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${!hasAvg && points.length <= 30 ? points.map((p, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.5" fill="var(--accent)"/>`).join('') : ''}
+    <circle cx="${X(last).toFixed(1)}" cy="${Y(points[last][main]).toFixed(1)}" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
+    <text x="${px}" y="14" fill="var(--muted)" font-size="12">High ${fmt(Math.max(...rawYs))} · Low ${fmt(Math.min(...rawYs))} ${esc(unit)}</text>
+    <text x="${W - px}" y="14" fill="var(--text)" font-size="12" font-weight="700" text-anchor="end">Latest ${fmt(points[last].y)} ${esc(unit)}</text>
+    <text x="${px}" y="${H - 5}" fill="var(--muted)" font-size="12">${esc(points[0].x)}</text>
+    <text x="${W - px}" y="${H - 5}" fill="var(--muted)" font-size="12" text-anchor="end">${esc(points[last].x)}</text>
+    <line class="xh" y1="${pt}" y2="${H - pb}" stroke="var(--muted)" stroke-dasharray="3 3" style="visibility:hidden"/>
+    <circle class="xm" r="4" fill="var(--text)" stroke="var(--card)" stroke-width="2" style="visibility:hidden"/>
+  </svg>${hasAvg ? `<div class="legend"><span><i style="background:var(--accent)"></i>${esc(opt.avgLabel || 'Average')}</span><span><i style="background:var(--muted);border-radius:50%"></i>${esc(opt.rawLabel || 'Each entry')}</span></div>` : ''}`;
+}
+
+// Vertical bars. items: [{label, value, tip}] or stacked [{label, tip, segs: [{value, color}]}].
+function vbars(items, opt = {}) {
+  const total = (i) => (i.segs ? i.segs.reduce((n, x) => n + x.value, 0) : i.value);
+  const max = Math.max(1, ...items.map(total));
+  return `<div class="vb">${opt.cap ? `<div class="vb-cap muted small">${esc(opt.cap)}</div>` : ''}<div class="vb-plot">${items.map((i) =>
+    `<div class="vb-col${i.segs ? ' stack' : ''}"${tipAttr(i.tip)}>${i.segs
+      ? i.segs.filter((x) => x.value > 0).map((x) => `<i style="height:${(x.value / max) * 100}%;background:${x.color}"></i>`).join('')
+      : `<i style="height:${(i.value / max) * 100}%"></i>`}</div>`).join('')}</div>
+    <div class="vb-x">${items.map((i) => `<span>${esc(i.label)}</span>`).join('')}</div></div>`;
+}
+
+// Horizontal bars with the value written at the end of each row.
+function hbars(items) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return `<div class="hb">${items.map((i) => `<div class="hb-row${i.act ? ' tap' : ''}"${tipAttr(i.tip)}${i.act || ''}><span class="trunc">${esc(i.label)}</span>
+    <div class="hb-track"><i style="width:${(i.value / max) * 100}%;${i.color ? `background:${i.color}` : ''}"></i></div><b>${esc(i.text ?? i.value)}</b></div>`).join('')}</div>`;
+}
+
+// Training calendar: one column per week, one cell per day, shaded by sets logged.
+function heatmap(days, today) {
+  const by = {};
+  for (const d of days) by[d.date] = by[d.date] ? { ...by[d.date], sets: by[d.date].sets + d.sets, name: by[d.date].name + ' + ' + d.name } : d;
+  const start = UD(days[0].date);
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  const end = UD(today), C = 13, top = 16;
+  let cells = '', labels = '', w = 0, lastMonth = -1;
+  for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = (d.getUTCDay() + 6) % 7, key = iso(d), e = by[key];
+    if (dow === 0 && d.getUTCMonth() !== lastMonth && d.getUTCDate() <= 7) {
+      lastMonth = d.getUTCMonth();
+      labels += `<text x="${w * C}" y="10" fill="var(--muted)" font-size="10">${d.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' })}</text>`;
+    }
+    const lvl = !e ? 0 : e.sets > 10 ? 1 : e.sets > 5 ? 0.65 : 0.35;
+    const when = d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    cells += `<rect x="${w * C}" y="${top + dow * C}" width="11" height="11" rx="2.5" fill="${e ? 'var(--accent)' : 'var(--card2)'}"${e ? ` fill-opacity="${lvl}"` : ''}${tipAttr(e ? `${when}\n${e.name} · ${e.sets} sets` : `${when}\nRest`)}/>`;
+    if (dow === 6) w++;
+  }
+  const width = (w + 1) * C;
+  return `<div class="hscroll scroll-end"><svg width="${width}" height="${top + 7 * C}" viewBox="0 0 ${width} ${top + 7 * C}" role="img" aria-label="Training calendar">${labels}${cells}</svg></div>
+    <div class="legend"><span>Fewer sets</span><span>${[0.35, 0.65, 1].map((o) => `<i style="background:var(--accent);opacity:${o};margin-right:3px"></i>`).join('')}More sets</span><span><i style="background:var(--card2)"></i>Rest day</span></div>`;
+}
+
+function sparkline(vals) {
+  const lo = Math.min(...vals), hi = Math.max(...vals), n = vals.length;
+  const pts = vals.map((v, i) => `${((i / (n - 1)) * 100).toFixed(1)},${(26 - ((v - lo) / (hi - lo || 1)) * 22).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+
+function showTip(text, x, y) {
+  const t = $('#tip');
+  t.textContent = text;
+  t.style.display = 'block';
+  const w = t.offsetWidth, h = t.offsetHeight;
+  t.style.left = Math.max(8, Math.min(innerWidth - w - 8, x - w / 2)) + 'px';
+  t.style.top = (y - h - 14 < 8 ? y + 18 : y - h - 14) + 'px';
+}
+function hideTip() {
+  $('#tip').style.display = 'none';
+  document.querySelectorAll('.xh,.xm').forEach((el) => (el.style.visibility = 'hidden'));
+}
+function hover(e) {
+  const svg = e.target.closest && e.target.closest('svg[data-ch]');
+  const c = svg && CH[svg.dataset.ch];
+  if (c) {
+    const r = svg.getBoundingClientRect(), n = c.points.length;
+    const vx = ((e.clientX - r.left) / r.width) * c.W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((vx - c.px) / (c.W - 2 * c.px)) * (n - 1))));
+    const x = c.px + (i * (c.W - 2 * c.px)) / (n - 1), p = c.points[i];
+    document.querySelectorAll('.xh,.xm').forEach((el) => (el.style.visibility = 'hidden'));
+    const xh = svg.querySelector('.xh'), xm = svg.querySelector('.xm');
+    xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.visibility = 'visible';
+    xm.setAttribute('cx', x); xm.setAttribute('cy', c.ys[i]); xm.style.visibility = 'visible';
+    return showTip(`${p.x}\n${fmt(p.y)} ${c.unit}${c.hasAvg ? ` · avg ${fmt(p.avg)}` : ''}`, e.clientX, r.top + (c.ys[i] / c.H) * r.height);
+  }
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el) showTip(el.dataset.tip, e.clientX, el.getBoundingClientRect().top + 4);
+  else hideTip();
+}
+document.addEventListener('pointermove', hover);
+document.addEventListener('pointerdown', hover);
+document.addEventListener('scroll', hideTip, true);
+
+// ---------- views ----------
+const workoutCard = (w) => `<div class="card tap" data-a="openWorkout" data-id="${w.id}">
+  <div class="row"><div class="grow title trunc">${esc(w.name)}</div><div class="muted small">${niceDate(w.date)}</div></div>
+  <div class="muted small trunc">${esc(w.exercises || 'No sets yet')}</div>
+  <div class="muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit} volume</div></div>`;
+
+const views = {
+  async home() {
+    const [stats, recent] = await Promise.all([api('/stats?today=' + localDate()), api('/workouts?limit=4')]);
+    S.unit = stats.unit;
+    const active = store.get('gt_active');
+    const activeW = active && recent.find((w) => w.id === active);
+    return `<h1>Gym Log</h1>
+      <div class="tiles">
+        <div class="tile"><b>${stats.workouts_this_week}</b><span>this week</span></div>
+        <div class="tile"><b>${stats.week_streak}</b><span>week streak</span></div>
+        <div class="tile"><b>${stats.total_workouts}</b><span>workouts</span></div>
+      </div>
+      <div style="margin-top:14px">
+        ${activeW ? `<button class="btn primary block" data-a="openWorkout" data-id="${activeW.id}">Continue: ${esc(activeW.name)}</button>
+          <button class="btn block" style="margin-top:8px" data-a="newWorkout">Start a new workout</button>`
+        : `<button class="btn primary block" data-a="newWorkout">Start workout</button>`}
+      </div>
+      <h2>Recent</h2>
+      ${recent.length ? recent.map(workoutCard).join('') : '<div class="empty">No workouts yet. Start your first one above.</div>'}`;
+  },
+
+  async history() {
+    const list = await api('/workouts?limit=300');
+    let out = '<h1>History</h1>', month = '';
+    for (const w of list) {
+      const m = new Date(w.date + 'T12:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      if (m !== month) { out += `<h2>${m}</h2>`; month = m; }
+      out += workoutCard(w);
+    }
+    return out + (list.length ? '' : '<div class="empty">Nothing logged yet.</div>');
+  },
+
+  async exercises() {
+    S.exercises = await api('/exercises');
+    return `<div class="row"><h1 class="grow">Exercises</h1><button class="btn" data-a="editExercise">+ New</button></div>
+      <input id="exq" placeholder="Search exercises" autocomplete="off">
+      <div id="exlist">${exerciseList('')}</div>`;
+  },
+
+  async prs() {
+    const prs = await api('/prs');
+    return `<h1>Personal records</h1>` + (prs.length ? prs.map((p) => `<div class="card tap" data-a="openExercise" data-id="${p.exercise_id}">
+        <div class="row"><div class="grow title trunc">${esc(p.name)}</div><div class="muted small">${niceDate(p.last_pr_date)}</div></div>
+        <div class="row" style="margin-top:4px"><div class="grow">
+          ${p.heaviest ? `<div>${recText(p.heaviest)} <span class="muted small">heaviest</span></div>` : `<div>${p.most_reps.reps} reps <span class="muted small">most reps</span></div>`}
+        </div>${p.best_e1rm ? `<div class="right"><b>${fmt(p.best_e1rm.value)}</b> <span class="muted small">est. 1RM</span></div>` : ''}</div>
+      </div>`).join('') : '<div class="empty">Your records show up here once you log some sets.</div>');
+  },
+
+  async insights() {
+    const r = S.range || 'all';
+    let from = '';
+    if (r !== 'all') { const x = new Date(); x.setDate(x.getDate() - +r); from = localDate(x); }
+    const d = await api(`/insights?today=${localDate()}${from ? '&from=' + from : ''}`);
+    S.unit = d.unit;
+    const s = d.summary, bw = d.bodyweight, u = d.unit;
+    if (!s.all_time_workouts) return '<h1>Insights</h1><div class="empty">Log some workouts to see your analysis here.</div>';
+    const mon = (m) => new Date(m + '-15T12:00').toLocaleDateString(undefined, { month: 'short' }).slice(0, 3);
+    const monY = (m) => new Date(m + '-15T12:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const scope = r === 'all' ? 'all time' : `last ${r} days`;
+    const inR = `<span class="scope">${scope}</span>`, allT = '<span class="scope">all time</span>';
+    const DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const pu = (p) => p.unit || u;
+    const sign = (n) => (n > 0 ? '+' : '') + fmt(n);
+
+    // Plain-language findings.
+    const hl = [];
+    if (s.workouts) hl.push(`${s.workouts} workouts, about ${s.avg_per_week} a week, most often on ${DOW[d.weekdays.indexOf(Math.max(...d.weekdays))]}s.`);
+    const gs = d.groups.filter((g) => g.sets);
+    if (gs.length > 1) hl.push(`Most sets went to ${gs[0].group} (${gs[0].sets}); fewest to ${gs.at(-1).group} (${gs.at(-1).sets}).`);
+    const stale = d.groups.filter((g) => GROUP_COLORS[g.group] && g.days_since >= 14).map((g) => `${g.group} (${g.days_since} days)`);
+    if (stale.length) hl.push(`Not trained in two weeks or more: ${stale.join(', ')}.`);
+    if (bw && bw.points.length > 1) hl.push(`Body weight is ${bw.change < 0 ? 'down' : 'up'} ${fmt(Math.abs(bw.change))} ${u} since ${niceDate(bw.start_date)} (${fmt(bw.start)} → ${fmt(bw.latest)})${bw.change_30d != null ? `, ${sign(bw.change_30d)} ${u} over the last 30 days` : ''}.`);
+    const imp = d.progress.filter((p) => p.sessions >= 4).sort((a, b) => b.change_pct - a.change_pct)[0];
+    if (imp && imp.change_pct > 0) hl.push(`Biggest improvement: ${imp.name}, ${fmt(imp.first)} → ${fmt(imp.latest)} ${pu(imp)} (${sign(imp.change_pct)}%).`);
+    const bestPrMonth = d.months.slice().sort((a, b) => b.prs - a.prs)[0];
+    if (bestPrMonth && bestPrMonth.prs) hl.push(`Best month for records: ${monY(bestPrMonth.month)} with ${bestPrMonth.prs}.`);
+    if (s.longest_gap_days >= 7) hl.push(`Longest break: ${s.longest_gap_days} days (${niceDate(s.longest_gap_from)} → ${niceDate(s.longest_gap_to)}).`);
+
+    const groupNames = [...Object.keys(GROUP_COLORS), ...new Set(d.months.flatMap((m) => Object.keys(m.groups)).filter((g) => !GROUP_COLORS[g]))];
+    const monthBars = (key, word) => vbars(d.months.map((m) => ({ label: mon(m.month), value: m[key], tip: `${monY(m.month)}\n${big(m[key])} ${word}` })), { cap: `Peak ${big(Math.max(...d.months.map((m) => m[key])))} ${word}` });
+    const improvers = d.progress.filter((p) => p.sessions >= 4 && p.change_pct).sort((a, b) => b.change_pct - a.change_pct);
+
+    return `<h1>Insights</h1>
+      <div class="chips">${[['all', 'All time'], ['90', 'Last 90 days'], ['30', 'Last 30 days']].map(([k, l]) => `<button class="chip${r === k ? ' on' : ''}" data-a="range" data-r="${k}">${l}</button>`).join('')}</div>
+      <div class="tiles">
+        <div class="tile"><b>${s.workouts}</b><span>workouts</span></div>
+        <div class="tile"><b>${s.avg_per_week}</b><span>per week</span></div>
+        <div class="tile"><b>${s.prs}</b><span>records set</span></div>
+        <div class="tile"><b>${s.active_weeks}/${s.total_weeks}</b><span>weeks trained</span></div>
+        <div class="tile"><b>${s.longest_week_streak}</b><span>best week streak</span></div>
+        <div class="tile"><b>${s.longest_gap_days}d</b><span>longest break</span></div>
+      </div>
+      <h2>Highlights${inR}</h2>
+      <div class="card"><ul class="hl">${hl.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+
+      <h2>Training calendar${allT}</h2>
+      <div class="card">${heatmap(d.calendar, d.range.to)}</div>
+
+      <h2>Workouts per month${allT}</h2>
+      <div class="card">${monthBars('workouts', 'workouts')}</div>
+
+      <h2>Which days you train${inR}</h2>
+      <div class="card">${vbars(d.weekdays.map((n, i) => ({ label: DOW[i].slice(0, 3), value: n, tip: `${DOW[i]}\n${n} workouts` })))}</div>
+
+      <h2>Workout types${inR}</h2>
+      <div class="card">${hbars(d.splits.slice(0, 10).map((x) => ({ label: x.name, value: x.count })))}</div>
+
+      <h2>Sets by muscle group${inR}</h2>
+      <div class="card">${hbars(d.groups.filter((g) => g.sets).map((g) => ({ label: g.group, value: g.sets, color: groupColor(g.group), tip: `${g.group}\n${g.sets} sets across ${g.exercises} exercises` })))}</div>
+
+      <h2>Muscle group mix by month${allT}</h2>
+      <div class="card">${vbars(d.months.map((m) => ({ label: mon(m.month), tip: `${monY(m.month)}\n` + (groupNames.filter((g) => m.groups[g]).map((g) => `${g}: ${m.groups[g]} sets`).join('\n') || 'No sets'), segs: groupNames.map((g) => ({ value: m.groups[g] || 0, color: groupColor(g) })) })))}
+        <div class="legend">${groupNames.filter((g) => d.months.some((m) => m.groups[g])).map((g) => `<span><i style="background:${groupColor(g)}"></i>${esc(g)}</span>`).join('')}</div></div>
+
+      <h2>Days since last trained${allT}</h2>
+      <div class="tiles">${d.groups.filter((g) => GROUP_COLORS[g.group]).sort((a, b) => a.days_since - b.days_since).map((g) => `<div class="tile"${tipAttr(`Last trained ${niceDate(g.last_date)}`)}><b>${g.days_since}d</b><span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${groupColor(g.group)};margin-right:5px"></i>${esc(g.group)}</span></div>`).join('')}</div>
+
+      <h2>Sets per month${allT}</h2>
+      <div class="card">${monthBars('sets', 'sets')}</div>
+
+      <h2>Volume per month${allT}</h2>
+      <div class="card">${monthBars('volume', u)}<div class="muted small" style="margin-top:8px">Weight × reps for sets logged in ${u}. Plate-count sets and sets without a rep count add nothing here.</div></div>
+
+      ${bw ? `<h2>Body weight${allT}</h2>
+      <div class="card">
+        <div class="tiles" style="margin-bottom:12px">
+          <div class="tile"><b>${fmt(bw.latest)}</b><span>now (${u})</span></div>
+          <div class="tile"><b>${sign(bw.change)}</b><span>since start</span></div>
+          <div class="tile"><b>${bw.change_30d == null ? '–' : sign(bw.change_30d)}</b><span>last 30 days</span></div>
+        </div>
+        ${lineChart(bw.points.map((p) => ({ x: niceDate(p.date), y: p.weight, avg: p.avg })), u, { label: 'Body weight trend', avgLabel: '5-entry average', rawLabel: 'Each weigh-in' })}
+        <div class="muted small" style="margin-top:8px">Lowest ${fmt(bw.min)} ${u} · highest ${fmt(bw.max)} ${u} · ${bw.points.length} weigh-ins</div>
+      </div>` : ''}
+
+      <h2>Records per month${allT}</h2>
+      <div class="card">${monthBars('prs', 'records')}</div>
+
+      <h2>Latest records${allT}</h2>
+      <div class="card">${d.recent_prs.map((p) => `<div class="prrow tap" data-a="openExercise" data-id="${p.exercise_id}" style="cursor:pointer"><div class="grow trunc">${esc(p.exercise)}</div><div style="white-space:nowrap">${recText(p)}</div><div class="muted small" style="white-space:nowrap">${niceDate(p.date)}</div></div>`).join('') || '<div class="muted small">No records yet.</div>'}</div>
+
+      <h2>Progress by exercise${allT}</h2>
+      <div class="muted small" style="margin:-4px 0 8px">Top weight per session for your most-trained lifts. Tap one for the full history.</div>
+      <div class="spark">${d.progress.slice(0, 12).map((p) => `<div class="tile" data-a="openExercise" data-id="${p.exercise_id}"><div class="nm trunc">${esc(p.name)}</div>${sparkline(p.points.map((x) => x.top))}
+        <span>${fmt(p.first)} → ${fmt(p.latest)} ${pu(p)} · ${p.change_pct > 0 ? '▲' : p.change_pct < 0 ? '▼' : ''} ${sign(p.change_pct)}% · ${p.sessions} sessions</span></div>`).join('')}</div>
+
+      ${improvers.length ? `<h2>Change from first to latest session${allT}</h2>
+      <div class="card">${[...improvers.slice(0, 6), ...improvers.slice(6).slice(-3).filter((p) => p.change_pct < 0)].map((p) => `<div class="prrow" data-a="openExercise" data-id="${p.exercise_id}" style="cursor:pointer"><div class="grow trunc">${esc(p.name)}</div><div class="muted small" style="white-space:nowrap">${fmt(p.first)} → ${fmt(p.latest)} ${pu(p)}</div><b style="min-width:54px;text-align:right">${sign(p.change_pct)}%</b></div>`).join('')}</div>` : ''}
+
+      <h2>Most-trained exercises${inR}</h2>
+      <div class="card">${hbars(d.top_exercises.map((e) => ({ label: e.name, value: e.sessions, color: groupColor(e.group), tip: `${e.name} (${e.group})\n${e.sessions} sessions · ${e.sets} sets`, act: ` data-a="openExercise" data-id="${e.exercise_id}"` })))}<div class="muted small" style="margin-top:6px">Sessions per exercise, coloured by muscle group.</div></div>
+
+      <h2>Rep ranges${inR}</h2>
+      <div class="card">${vbars(d.reps.map((b) => ({ label: b.bucket, value: b.sets, tip: `${b.bucket} reps\n${b.sets} sets` })))}<div class="muted small" style="margin-top:8px">Sets with a rep count, grouped by reps.</div></div>
+
+      <h2>Equipment${inR}</h2>
+      <div class="card">${hbars(d.equipment.map((e) => ({ label: e.equipment, value: e.sets })))}</div>
+
+      <h2>Assisted sets by month${allT}</h2>
+      <div class="card">${vbars(d.months.map((m) => ({ label: mon(m.month), value: m.assisted_pct, tip: `${monY(m.month)}\n${m.assisted_pct}% of sets (${m.assisted_sets} of ${m.sets})` })), { cap: 'Share of sets noted as assisted, spotted or supported (%)' })}</div>`;
+  },
+
+  async more() {
+    const [stats, bw] = await Promise.all([api('/stats?today=' + localDate()), api('/bodyweight?limit=120')]);
+    S.unit = stats.unit;
+    const max = Math.max(1, ...stats.weeks.map((w) => w.workouts));
+    const pts = bw.slice().reverse().map((b) => ({ x: niceDate(b.date), y: b.weight }));
+    return `<h1>Me</h1>
+      <div class="tiles">
+        <div class="tile"><b>${stats.workouts_last_30_days}</b><span>last 30 days</span></div>
+        <div class="tile"><b>${big(stats.total_sets)}</b><span>total sets</span></div>
+        <div class="tile"><b>${big(stats.total_volume)}</b><span>${S.unit} lifted</span></div>
+      </div>
+      <h2>Workouts per week</h2>
+      <div class="card"><div class="bars">${stats.weeks.map((w) => `<i class="${w.workouts ? '' : 'z'}" style="height:${Math.max(3, (w.workouts / max) * 100)}%" title="${w.week_start}: ${w.workouts}"></i>`).join('')}</div>
+        <div class="row muted small" style="margin-top:6px"><div class="grow">12 weeks ago</div><div>this week</div></div></div>
+      <h2>Body weight</h2>
+      <div class="card">
+        <div class="row"><input id="bwv" type="number" inputmode="decimal" step="0.1" placeholder="${S.unit}" aria-label="Body weight" style="flex:0 0 84px"><input id="bwd" type="date" value="${localDate()}" aria-label="Date"><button class="btn primary" data-a="addBw">Save</button></div>
+        <div style="margin-top:12px">${pts.length ? lineChart(pts, S.unit) : '<div class="muted small">No entries yet.</div>'}</div>
+        ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div><button class="btn ghost" data-a="delBw" data-id="${b.id}" aria-label="Delete entry">✕</button></div>`).join('')}
+      </div>
+      <h2>Units</h2>
+      <div class="card row"><div class="grow">Weight unit<div class="muted small">Changes the label only; numbers are not converted.</div></div>
+        <select id="unit" style="width:90px">${opts(['kg', 'lb'], S.unit)}</select></div>
+      <h2>Appearance</h2>
+      <div class="card row"><div class="grow">Theme<div class="muted small">System follows your device setting.</div></div>
+        <select id="theme" style="width:110px">${[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<option value="${k}"${store.get('gt_theme', 'system') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <h2>Connect an AI agent (MCP)</h2>
+      <div class="card small">
+        <div>Server URL: <code>${location.origin}/mcp</code></div>
+        <div class="muted" style="margin:6px 0">Send your access key as a Bearer token. For clients that can't set headers, use the URL with the key built in.</div>
+        <div class="row"><button class="btn" data-a="copyMcp" data-k="0">Copy URL</button><button class="btn" data-a="copyMcp" data-k="1">Copy URL with key</button></div>
+      </div>
+      <button class="btn block danger" style="margin-top:18px" data-a="logout">Sign out on this device</button>`;
+  },
+};
+
+function exerciseList(q) {
+  q = q.trim().toLowerCase();
+  const list = S.exercises.filter((e) => !q || e.name.toLowerCase().includes(q) || e.muscle_group.toLowerCase().includes(q));
+  if (!list.length) return '<div class="empty">No matches.</div>';
+  const groups = [...new Set([...GROUPS, ...list.map((e) => e.muscle_group)])];
+  return groups.map((g) => {
+    const items = list.filter((e) => e.muscle_group === g);
+    return items.length ? `<h2>${esc(g)}</h2><div class="card" style="padding:2px 14px">${items.map((e, i) => `<div class="pick row" style="${i ? '' : 'border-top:0'}" data-a="openExercise" data-id="${e.id}">
+      <div class="grow trunc">${esc(e.name)}</div><div class="muted small">${e.last_used ? niceDate(e.last_used) : esc(e.equipment)}</div></div>`).join('')}</div>` : '';
+  }).join('');
+}
+
+async function vWorkout(id) {
+  if (!S.exercises.length) S.exercises = await api('/exercises');
+  const pending = store.get('gt_pending_' + id, []);
+  const w = await api(`/workouts/${id}?extra=${pending.join(',')}`);
+  S.wk = w;
+  const cards = w.exercises.slice();
+  for (const pid of pending) {
+    if (cards.some((c) => c.exercise_id === pid)) continue;
+    const ex = S.exercises.find((e) => e.id === pid);
+    if (ex) cards.push({ exercise_id: pid, name: ex.name, sets: [], pending: true });
+  }
+  const card = (c) => {
+    const prev = w.previous[c.exercise_id];
+    const lastSet = c.sets[c.sets.length - 1] || prev?.sets.filter((s) => !s.is_warmup)[0] || prev?.sets[0];
+    let n = 0;
+    return `<div class="card">
+      <div class="row"><div class="grow title trunc" data-a="openExercise" data-id="${c.exercise_id}" style="cursor:pointer">${esc(c.name)}</div>
+        ${c.pending ? `<button class="btn ghost" data-a="dropPending" data-id="${c.exercise_id}" aria-label="Remove exercise">✕</button>` : ''}</div>
+      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}</div>
+      ${c.sets.map((s) => `<div class="set" data-a="editSet" data-id="${s.id}" data-ex="${c.exercise_id}">
+        <div class="n">${s.is_warmup ? 'W' : ++n}</div>
+        <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
+        <div>${s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('')}
+      <div class="addset">
+        <input id="w-${c.exercise_id}" type="number" inputmode="decimal" step="any" placeholder="${S.unit}" value="${lastSet ? fmt(lastSet.weight) : ''}" aria-label="Weight">
+        <input id="r-${c.exercise_id}" type="number" inputmode="numeric" placeholder="reps" value="${lastSet && lastSet.reps ? lastSet.reps : ''}" aria-label="Reps">
+        <button class="btn toggle ${S.warm[c.exercise_id] ? 'on' : ''}" data-a="warm" data-id="${c.exercise_id}" title="Warm-up set" aria-label="Warm-up set">W</button>
+        <button class="btn primary" data-a="addSet" data-id="${c.exercise_id}" aria-label="Add set">＋</button>
+      </div></div>`;
+  };
+  return `<div class="hdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
+      <input class="name grow" id="wname" value="${esc(w.name)}" aria-label="Workout name"><span id="rest"></span></div>
+    <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${w.date}" style="width:auto"><div class="grow right muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit}</div></div>
+    ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
+    <button class="btn block" data-a="pickExercise">+ Add exercise</button>
+    <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(w.notes)}</textarea>
+    <button class="btn primary block" style="margin-top:14px" data-a="finish">Finish workout</button>
+    <div class="grid2" style="margin-top:8px"><button class="btn" data-a="repeat">Repeat as new</button><button class="btn danger" data-a="delWorkout">Delete</button></div>`;
+}
+
+async function vExercise(id) {
+  const d = await api('/exercises/' + id);
+  const e = d.exercise, r = d.records;
+  S.ex = e;
+  const weighted = !!r.best_e1rm;
+  const eu = (r.heaviest && r.heaviest.unit) || S.unit;
+  const metrics = weighted ? [['e1rm', 'Est. 1RM', eu], ['top', 'Top weight', eu], ['vol', 'Volume', eu], ['reps', 'Best reps', 'reps']] : [['reps', 'Best reps', 'reps']];
+  const metric = metrics.find((m) => m[0] === S.exMetric) || metrics[0];
+  const work = (s) => s.sets.filter((x) => !x.is_warmup);
+  const val = { e1rm: (s) => s.best_e1rm, top: (s) => s.top_weight, vol: (s) => s.volume, reps: (s) => Math.max(...work(s).map((x) => x.reps)) }[metric[0]];
+  const pts = d.sessions.slice().reverse().filter((s) => work(s).length).map((s) => ({ x: niceDate(s.date), y: val(s) }));
+  const rec = (label, v, text) => (v ? `<div class="tile"><b>${text}</b><span>${label} · ${niceDate(v.date)}</span></div>` : '');
+  return `<div class="hdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button><h1 class="grow trunc" style="margin:0">${esc(e.name)}</h1><button class="btn" data-a="editExercise" data-id="${e.id}">Edit</button></div>
+    <div class="muted small">${esc(e.muscle_group)} · ${esc(e.equipment)} · ${d.total_sessions} session${d.total_sessions === 1 ? '' : 's'}</div>
+    ${e.notes ? `<div class="card small" style="margin-top:10px">${esc(e.notes)}</div>` : ''}
+    <h2>Records</h2>
+    ${r.most_reps ? `<div class="tiles" style="grid-template-columns:1fr 1fr">
+      ${rec('Est. 1RM', r.best_e1rm, r.best_e1rm && `${fmt(r.best_e1rm.value)} ${r.best_e1rm.unit || S.unit}`)}
+      ${rec('Heaviest', r.heaviest, r.heaviest && recText(r.heaviest))}
+      ${rec('Most reps', r.most_reps, `${r.most_reps.reps}${r.most_reps.weight ? ` @ ${fmt(r.most_reps.weight)}` : ''}`)}
+      ${rec('Best set volume', r.best_volume_set, r.best_volume_set && `${fmt(r.best_volume_set.value)} ${r.best_volume_set.unit || S.unit}`)}
+    </div>` : '<div class="muted small">No working sets logged yet.</div>'}
+    <h2>${metric[1]} per session</h2>
+    ${metrics.length > 1 ? `<div class="chips">${metrics.map((m) => `<button class="chip${m === metric ? ' on' : ''}" data-a="exMetric" data-m="${m[0]}">${m[1]}</button>`).join('')}</div>` : ''}
+    <div class="card">${lineChart(pts, metric[2], { label: metric[1] + ' per session' })}</div>
+    <h2>History</h2>
+    ${d.sessions.map((s) => `<div class="card tap" data-a="openWorkout" data-id="${s.workout_id}">
+      <div class="row"><div class="grow title trunc">${niceDate(s.date)}</div><div class="muted small trunc">${esc(s.workout_name)}</div></div>
+      <div class="small">${s.sets.map((x) => (x.is_warmup ? `<span class="muted">${shortSet(x)}</span>` : shortSet(x))).join(' · ')}</div></div>`).join('') || '<div class="muted small">Nothing yet.</div>'}`;
+}
+
+let renderSeq = 0;
+async function render() {
+  const seq = ++renderSeq;
+  CH = {}; chN = 0;
+  const main = $('#main');
+  $('#tabs').hidden = !S.token;
+  if (!S.token) return (main.innerHTML = loginView());
+  document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', !S.view && b.dataset.t === S.tab));
+  let html;
+  try {
+    html = S.view?.type === 'workout' ? await vWorkout(S.view.id) : S.view?.type === 'exercise' ? await vExercise(S.view.id) : await views[S.tab]();
+  } catch (e) {
+    if (!S.token) return render();
+    html = `<div class="empty">${esc(e.message)}<br><br><button class="btn" data-a="back">Go back</button></div>`;
+  }
+  if (seq === renderSeq) {
+    main.innerHTML = html;
+    hideTip();
+    main.querySelectorAll('.scroll-end').forEach((el) => (el.scrollLeft = el.scrollWidth));
+  }
+}
+function go(view) { S.back = S.view; S.view = view; window.scrollTo(0, 0); return render(); }
+
+const loginView = () => `<div style="max-width:340px;margin:18vh auto 0;text-align:center">
+  <h1>Gym Log</h1><p class="muted">Enter your access key to open your log.</p>
+  <form id="login"><input id="key" type="password" placeholder="Access key" autocomplete="current-password" aria-label="Access key">
+  <button class="btn primary block" style="margin-top:10px">Open</button><div id="lerr" class="small" style="color:var(--danger);margin-top:10px"></div></form></div>`;
+function logout() { S.token = ''; store.set('gt_token', null); S.view = null; }
+
+// ---------- actions ----------
+const pendingOf = (id) => store.get('gt_pending_' + id, []);
+const A = {
+  tab(el) { S.tab = el.dataset.t; S.view = null; window.scrollTo(0, 0); render(); },
+  back() { S.view = S.back && S.back !== S.view ? S.back : null; S.back = null; render(); },
+  openWorkout(el) { go({ type: 'workout', id: +el.dataset.id }); },
+  openExercise(el) { closeModal(); go({ type: 'exercise', id: +el.dataset.id }); },
+  logout() { logout(); render(); },
+  range(el) { S.range = el.dataset.r; render(); },
+  exMetric(el) { S.exMetric = el.dataset.m; render(); },
+
+  async newWorkout() {
+    const h = new Date().getHours();
+    const w = await api('/workouts', 'POST', { date: localDate(), name: (h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout' });
+    store.set('gt_active', w.id);
+    S.back = null; S.view = { type: 'workout', id: w.id };
+    await render();
+    A.pickExercise();
+  },
+  async finish() {
+    const w = S.wk;
+    store.set('gt_active', null);
+    store.set('gt_pending_' + w.id, null);
+    S.restAt = 0;
+    const prs = w.exercises.flatMap((e) => e.sets).filter((s) => s.is_pr).length;
+    S.view = null; S.tab = 'home';
+    await render();
+    toast(`Saved · ${w.set_count} sets${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}`);
+  },
+  async delWorkout() {
+    if (!confirm('Delete this workout and all its sets?')) return;
+    await api('/workouts/' + S.wk.id, 'DELETE');
+    if (store.get('gt_active') === S.wk.id) store.set('gt_active', null);
+    store.set('gt_pending_' + S.wk.id, null);
+    S.view = null; render(); toast('Workout deleted');
+  },
+  async repeat() {
+    const src = S.wk;
+    const w = await api('/workouts', 'POST', { date: localDate(), name: src.name });
+    store.set('gt_pending_' + w.id, src.exercises.map((e) => e.exercise_id));
+    store.set('gt_active', w.id);
+    S.back = null; S.view = { type: 'workout', id: w.id };
+    window.scrollTo(0, 0);
+    await render(); toast('New workout with the same exercises');
+  },
+
+  pickExercise() {
+    modal(`<h3>Add exercise</h3><input id="pq" placeholder="Search or type a new name" autocomplete="off"><div id="plist" style="margin-top:8px"></div>`);
+    fillPicker('');
+    setTimeout(() => $('#pq')?.focus(), 50);
+  },
+  async choose(el) {
+    let id = +el.dataset.id;
+    if (!id) {
+      const ex = await api('/exercises', 'POST', { name: el.dataset.name });
+      S.exercises.push({ ...ex, set_count: 0, last_used: null });
+      id = ex.id;
+    }
+    const wid = S.view.id, p = pendingOf(wid);
+    if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+    closeModal(); await render();
+    $('#w-' + id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  },
+  dropPending(el) { store.set('gt_pending_' + S.view.id, pendingOf(S.view.id).filter((x) => x !== +el.dataset.id)); render(); },
+  warm(el) { const id = el.dataset.id; S.warm[id] = !S.warm[id]; el.classList.toggle('on', S.warm[id]); },
+  async addSet(el) {
+    const id = +el.dataset.id;
+    const weight = $('#w-' + id).value, reps = $('#r-' + id).value;
+    if (reps === '' || +reps <= 0) { toast('Enter reps'); $('#r-' + id).focus(); return; }
+    const w = await api(`/workouts/${S.view.id}/sets`, 'POST', { exercise_id: id, sets: [{ weight: weight || 0, reps, warmup: !!S.warm[id] }] });
+    const s = w.exercises.find((e) => e.exercise_id === id).sets.at(-1);
+    S.warm[id] = false;
+    S.restAt = Date.now();
+    await render();
+    toast(s.is_pr ? 'New PR! 🏆' : 'Set logged');
+  },
+  editSet(el) {
+    const s = S.wk.exercises.flatMap((e) => e.sets).find((x) => x.id === +el.dataset.id);
+    modal(`<h3>Edit set</h3><div class="grid2"><div><label for="es-w">Weight (${S.unit})</label><input id="es-w" type="number" inputmode="decimal" step="any" value="${fmt(s.weight)}"></div>
+      <div><label for="es-r">Reps</label><input id="es-r" type="number" inputmode="numeric" value="${s.reps}"></div></div>
+      <div class="grid2"><div><label for="es-rpe">RPE (optional)</label><input id="es-rpe" type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${fmt(s.rpe)}"></div>
+      <div><label for="es-wu">Type</label><select id="es-wu"><option value="0">Working set</option><option value="1"${s.is_warmup ? ' selected' : ''}>Warm-up</option></select></div></div>
+      <label for="es-n">Note</label><input id="es-n" value="${esc(s.notes)}">
+      <div class="grid2" style="margin-top:14px"><button class="btn danger" data-a="delSet" data-id="${s.id}">Delete set</button><button class="btn primary" data-a="saveSet" data-id="${s.id}">Save</button></div>`);
+  },
+  async saveSet(el) {
+    await api('/sets/' + el.dataset.id, 'PATCH', { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value });
+    closeModal(); render();
+  },
+  async delSet(el) { await api('/sets/' + el.dataset.id, 'DELETE'); closeModal(); render(); },
+
+  editExercise(el) {
+    const e = el.dataset.id ? S.ex : { name: '', muscle_group: 'Other', equipment: 'Other', notes: '' };
+    modal(`<h3>${e.id ? 'Edit' : 'New'} exercise</h3><label for="ee-n">Name</label><input id="ee-n" value="${esc(e.name)}">
+      <div class="grid2"><div><label for="ee-g">Muscle group</label><select id="ee-g">${opts(GROUPS, e.muscle_group)}</select></div>
+      <div><label for="ee-q">Equipment</label><select id="ee-q">${opts(EQUIP, e.equipment)}</select></div></div>
+      <label for="ee-t">Notes (cues, setup)</label><textarea id="ee-t">${esc(e.notes)}</textarea>
+      <div class="grid2" style="margin-top:14px">${e.id ? `<button class="btn danger" data-a="delExercise" data-id="${e.id}">Delete</button>` : '<button class="btn" data-a="closeModal">Cancel</button>'}
+      <button class="btn primary" data-a="saveExercise" data-id="${e.id || ''}">Save</button></div>`);
+  },
+  async saveExercise(el) {
+    const body = { name: $('#ee-n').value, muscle_group: $('#ee-g').value, equipment: $('#ee-q').value, notes: $('#ee-t').value };
+    await (el.dataset.id ? api('/exercises/' + el.dataset.id, 'PATCH', body) : api('/exercises', 'POST', body));
+    S.exercises = []; closeModal(); render();
+  },
+  async delExercise(el) {
+    if (!confirm('Delete this exercise and every set logged for it?')) return;
+    await api('/exercises/' + el.dataset.id, 'DELETE');
+    S.exercises = []; closeModal(); S.view = null; S.tab = 'exercises'; render();
+  },
+  closeModal,
+
+  async addBw() {
+    const v = $('#bwv').value;
+    if (!v) return toast('Enter a weight');
+    await api('/bodyweight', 'POST', { weight: v, date: $('#bwd').value });
+    render(); toast('Body weight saved');
+  },
+  async delBw(el) { await api('/bodyweight/' + el.dataset.id, 'DELETE'); render(); },
+  async copyMcp(el) {
+    const url = location.origin + '/mcp' + (el.dataset.k === '1' ? '/' + encodeURIComponent(S.token) : '');
+    try { await navigator.clipboard.writeText(url); toast('Copied'); } catch { prompt('Copy this URL', url); }
+  },
+};
+
+function fillPicker(q) {
+  const t = q.trim().toLowerCase();
+  const inWorkout = new Set([...(S.wk?.exercises || []).map((e) => e.exercise_id), ...pendingOf(S.view.id)]);
+  const list = S.exercises.filter((e) => !t || e.name.toLowerCase().includes(t) || e.muscle_group.toLowerCase().includes(t))
+    .sort((a, b) => (b.last_used || '').localeCompare(a.last_used || '') || a.name.localeCompare(b.name));
+  const exact = S.exercises.some((e) => e.name.toLowerCase() === t);
+  $('#plist').innerHTML = (t && !exact ? `<div class="pick" data-a="choose" data-name="${esc(q.trim())}" style="color:var(--accent)">+ Create “${esc(q.trim())}”</div>` : '') +
+    list.map((e) => `<div class="pick row" data-a="choose" data-id="${e.id}"><div class="grow trunc">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="muted small">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>`).join('');
+}
+
+// ---------- events ----------
+document.addEventListener('click', async (ev) => {
+  if (ev.target.id === 'modal') return closeModal();
+  const el = ev.target.closest('[data-a]');
+  if (!el || !A[el.dataset.a]) return;
+  try { await A[el.dataset.a](el); } catch (e) { toast(e.message); }
+});
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'pq') fillPicker(ev.target.value);
+  if (ev.target.id === 'exq') $('#exlist').innerHTML = exerciseList(ev.target.value);
+});
+document.addEventListener('change', async (ev) => {
+  const t = ev.target;
+  try {
+    if (t.id === 'wname') await api('/workouts/' + S.view.id, 'PATCH', { name: t.value });
+    if (t.id === 'wnotes') await api('/workouts/' + S.view.id, 'PATCH', { notes: t.value });
+    if (t.id === 'wdate' && t.value) { await api('/workouts/' + S.view.id, 'PATCH', { date: t.value }); render(); }
+    if (t.id === 'theme') applyTheme(t.value);
+    if (t.id === 'unit') { await api('/settings', 'PUT', { unit: t.value }); S.unit = t.value; render(); }
+  } catch (e) { toast(e.message); }
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') closeModal();
+  if (ev.key === 'Enter' && /^[wr]-\d+$/.test(ev.target.id)) $(`[data-a="addSet"][data-id="${ev.target.id.slice(2)}"]`)?.click();
+});
+document.addEventListener('submit', async (ev) => {
+  if (ev.target.id !== 'login') return;
+  ev.preventDefault();
+  S.token = $('#key').value.trim();
+  try {
+    S.unit = (await api('/settings')).unit || 'kg';
+    store.set('gt_token', S.token);
+    render();
+  } catch (e) { S.token = ''; const le = $('#lerr'); if (le) le.textContent = e.message; }
+});
+setInterval(() => {
+  const r = $('#rest');
+  if (!r) return;
+  const s = S.restAt ? Math.floor((Date.now() - S.restAt) / 1000) : -1;
+  r.textContent = s >= 0 && s < 1800 ? `Rest ${Math.floor(s / 60)}:${pad(s % 60)}` : '';
+}, 1000);
+
+(async () => {
+  if (S.token) { try { S.unit = (await api('/settings')).unit || 'kg'; } catch {} }
+  const active = store.get('gt_active');
+  if (S.token && active) S.view = { type: 'workout', id: active };
+  await render();
+  // If the remembered workout was deleted elsewhere, fall back to the home tab.
+  if (active && S.view && $('#main .empty [data-a="back"]')) { store.set('gt_active', null); S.view = null; render(); }
+})();
+</script>
+</body>
+</html>
