@@ -105,6 +105,54 @@ svg.chart{touch-action:pan-y;cursor:crosshair}
 .spark .nm{font-size:13px;font-weight:650}
 .prrow{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
 .prrow:first-child{border-top:0}
+
+/* ---------- mobile first ---------- */
+html{-webkit-text-size-adjust:100%}
+body{overscroll-behavior-y:none}
+#main{overflow-x:clip}
+[data-a]{cursor:pointer;touch-action:manipulation}
+button,.chip,.pick,.card.tap,.set,#tabs{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+input,select,textarea{font-size:16px;min-height:46px}
+textarea{min-height:84px}
+input[type=date]{-webkit-appearance:none;appearance:none;text-align:left;display:block}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.btn{min-height:46px;padding:10px 16px}
+.btn.ghost{min-width:44px;min-height:44px}
+.btn.block{min-height:52px;font-size:17px}
+.btn:active{transform:none}
+.btn:active,.chip:active,.card.tap:active,.pick:active,.set:active,.tile[data-a]:active,.hb-row.tap:active,.prrow[data-a]:active,#tabs button:active{opacity:.55}
+.busy{opacity:.55;pointer-events:none}
+.chip{min-height:38px;padding:8px 14px}
+.pick{min-height:52px;display:flex;align-items:center;gap:10px;padding:10px 4px}
+.set{min-height:46px;padding:6px 2px}
+.set.saving{opacity:.6}
+.row>*{min-width:0}
+#tabs{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--card)}
+#tabs button{min-height:56px;max-width:none}
+body.kb #tabs,body.locked #tabs{display:none}
+body.kb{padding-bottom:20px}
+body.locked{overflow:hidden}
+.loading{text-align:center;color:var(--muted);padding:30vh 0}
+#modal{inset:auto;top:0;left:0;right:0;height:100%;background:var(--bg);flex-direction:column;align-items:stretch;justify-content:flex-start}
+.mhead{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 8px 8px 16px;border-bottom:1px solid var(--line);max-width:640px;width:100%;margin:0 auto}
+.mhead h3{flex:1;margin:0;font-size:18px}
+#sheet{flex:1;min-height:0;max-height:none;border:0;border-radius:0;background:none;margin:0 auto;padding:14px 16px calc(24px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.stick{position:sticky;top:-14px;background:var(--bg);padding:14px 0 8px;margin-top:-14px;z-index:1}
+.whdr{position:sticky;top:0;z-index:4;background:var(--bg);margin:calc(-14px - env(safe-area-inset-top)) -16px 10px;padding:calc(6px + env(safe-area-inset-top)) 12px 6px 6px;display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--line)}
+.whdr input.name{flex:1;font-size:19px;font-weight:700;background:none;border-color:transparent;padding:6px 4px;min-width:0}
+.whdr input.name:focus{border-color:var(--line)}
+.logger{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.cap{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;min-height:28px}
+.cap button{background:none;border:0;color:var(--accent);font-size:12px;font-weight:600;padding:4px 0 4px 8px}
+.stepper{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card2)}
+.stepper button{background:none;border:0;font-size:24px;font-weight:500;min-height:52px;color:var(--text);padding:0}
+.stepper button:active{background:var(--line)}
+.stepper input{border:0;border-radius:0;background:none;text-align:center;font-size:20px;font-weight:650;padding:0;min-height:52px;font-variant-numeric:tabular-nums}
+.logrow{display:grid;grid-template-columns:auto 1fr;gap:10px;margin-top:10px}
+.logrow .btn{min-height:54px;font-size:17px}
+.bwrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px}
+#sync{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));z-index:30;background:var(--gold);color:#2b1f00;font-size:12px;font-weight:700;padding:6px 12px;border-radius:99px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -117,7 +165,8 @@ svg.chart{touch-action:pan-y;cursor:crosshair}
   <button data-a="tab" data-t="insights"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Insights</button>
   <button data-a="tab" data-t="more"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>Me</button>
 </nav>
-<div id="modal"><div id="sheet"></div></div>
+<div id="modal" role="dialog" aria-modal="true"><div class="mhead"><h3 id="mtitle"></h3><button class="btn ghost" data-a="closeModal" aria-label="Close">✕</button></div><div id="sheet"></div></div>
+<div id="sync" hidden></div>
 <div id="toast"></div>
 <div id="tip"></div>
 <script>
@@ -152,18 +201,132 @@ matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncTheme
 const GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Other'];
 const EQUIP = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other'];
 
-const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: 'kg', exercises: [], warm: {}, restAt: 0 };
+const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, prevExtra: {}, restAt: store.get('gt_rest', 0), deferred: false };
 
+// ---------- network, cache and offline queue ----------
 async function api(path, method = 'GET', body) {
-  const res = await fetch('/api' + path, {
-    method,
-    headers: { Authorization: 'Bearer ' + S.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (res.status === 401) { logout(); throw new Error('Wrong access key'); }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 15000);
+  let res;
+  try {
+    res = await fetch('/api' + path, {
+      method,
+      signal: ctl.signal,
+      headers: { Authorization: 'Bearer ' + S.token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    const err = new Error(navigator.onLine === false ? 'You are offline' : 'Could not reach the server');
+    err.network = true;
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status === 401) {
+    const had = store.get('gt_token');
+    logout();
+    if (had) render();
+    throw new Error('Wrong access key');
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) {
+    const err = new Error(data.error || 'Request failed');
+    err.network = res.status >= 500;
+    err.status = res.status;
+    throw err;
+  }
   return data;
+}
+
+// Every screen reads through this cache: it paints from the last known data at once,
+// then refreshes in the background and repaints only if something changed.
+const mem = new Map();
+const inflight = new Map();
+function cacheRead(path) {
+  if (mem.has(path)) return mem.get(path);
+  const c = store.get('gc:' + path);
+  if (c) { c.json = JSON.stringify(c.data); mem.set(path, c); }
+  return c;
+}
+function cacheWrite(path, data) {
+  const c = { t: Date.now(), data, json: JSON.stringify(data) };
+  mem.set(path, c);
+  store.set('gc:' + path, { t: c.t, data });
+  return c;
+}
+function refresh(path) {
+  if (inflight.has(path)) return inflight.get(path);
+  const p = api(path)
+    .then((data) => {
+      const old = mem.get(path);
+      const c = cacheWrite(path, data);
+      if (old && old.json !== c.json) softRender();
+      return data;
+    })
+    .finally(() => inflight.delete(path));
+  inflight.set(path, p);
+  return p;
+}
+function get(path) {
+  const c = cacheRead(path);
+  if (!c) return refresh(path);
+  if (c.stale || Date.now() - c.t > 5000) { c.stale = false; refresh(path).catch(() => {}); }
+  return Promise.resolve(c.data);
+}
+function touchAll() { for (const c of mem.values()) c.stale = true; }
+function pruneCache() {
+  try {
+    const today = localDate();
+    for (const k of Object.keys(localStorage)) if (k.startsWith('gc:') && k.includes('today=') && !k.includes(today)) localStorage.removeItem(k);
+  } catch {}
+}
+
+// Sets are logged optimistically: they appear at once and are sent from this queue, which survives
+// reloads and keeps retrying when the gym has no signal.
+let outbox = store.get('gt_outbox', []);
+let pumping = false, retryTimer = 0, syncFailing = false;
+const saveOutbox = () => store.set('gt_outbox', outbox);
+async function pump() {
+  if (pumping || !S.token) return;
+  pumping = true;
+  clearTimeout(retryTimer);
+  while (outbox.length) {
+    const op = outbox[0];
+    try {
+      const w = await api(op.path, op.method, op.body);
+      outbox.shift(); saveOutbox();
+      syncFailing = false;
+      mergeWorkout(w);
+      const s = (w.exercises.find((e) => e.exercise_id === op.body.exercise_id) || { sets: [] }).sets.at(-1);
+      if (s && s.is_pr) toast('New PR! 🏆');
+      paintWorkout();
+    } catch (e) {
+      if (e.network) { syncFailing = true; retryTimer = setTimeout(pump, 5000); break; }
+      outbox.shift(); saveOutbox();
+      toast('A set could not be saved: ' + e.message);
+      paintWorkout();
+    }
+  }
+  pumping = false;
+  syncBadge();
+}
+function syncBadge() {
+  const el = $('#sync');
+  const n = outbox.reduce((k, op) => k + op.body.sets.length, 0);
+  el.hidden = !(n && syncFailing);
+  el.textContent = `${n} set${n === 1 ? '' : 's'} waiting to sync`;
+}
+window.addEventListener('online', pump);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
+
+// Store a workout returned by the server, keeping "last time" info we already had.
+function mergeWorkout(w) {
+  const path = '/workouts/' + w.id;
+  const old = mem.get(path);
+  if (old) w.previous = { ...old.data.previous, ...w.previous };
+  touchAll();
+  cacheWrite(path, w);
+  if (S.wk && S.wk.id === w.id) S.wk = w;
 }
 
 function toast(msg) {
@@ -173,8 +336,38 @@ function toast(msg) {
   clearTimeout(toast.t);
   toast.t = setTimeout(() => t.classList.remove('show'), 2200);
 }
-function modal(html) { $('#sheet').innerHTML = html; $('#modal').classList.add('open'); }
-function closeModal() { $('#modal').classList.remove('open'); }
+
+// Full-screen dialog. Opening one adds a history entry so the phone's back button closes it.
+const modalOpen = () => $('#modal').classList.contains('open');
+const depth = () => (history.state && history.state.depth) || 0;
+let popWait = null;
+function modal(title, html) {
+  $('#mtitle').textContent = title;
+  $('#sheet').innerHTML = html;
+  $('#sheet').scrollTop = 0;
+  if (modalOpen()) return;
+  $('#modal').classList.add('open');
+  document.body.classList.add('locked');
+  history.pushState({ tab: S.tab, view: S.view, depth: depth() + 1, modal: true }, '');
+}
+function hideModal() {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  $('#modal').classList.remove('open');
+  document.body.classList.remove('locked', 'kb');
+}
+function closeModal() {
+  if (!modalOpen()) return Promise.resolve();
+  hideModal();
+  if (history.state && history.state.modal) return new Promise((done) => { popWait = done; history.back(); });
+  return Promise.resolve();
+}
+// Keep the dialog inside the visible area when the on-screen keyboard is up.
+if (window.visualViewport) {
+  const fit = () => { const m = $('#modal'); m.style.height = visualViewport.height + 'px'; m.style.top = visualViewport.offsetTop + 'px'; };
+  visualViewport.addEventListener('resize', fit);
+  visualViewport.addEventListener('scroll', fit);
+}
+
 // Sets noted as "plates" (machine stack counts) show that unit; sets with no rep count show the weight alone.
 const unitOf = (s) => (/^plates\b/.test(s.notes || '') ? 'plates' : S.unit);
 const noteOf = (s) => (s.notes || '').replace(/^plates(\s*·\s*)?/, '');
@@ -269,19 +462,26 @@ function sparkline(vals) {
   return `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
 
-function showTip(text, x, y) {
+let tipOn = false, tipTimer = 0;
+function showTip(text, x, y, touch) {
   const t = $('#tip');
   t.textContent = text;
   t.style.display = 'block';
+  tipOn = true;
   const w = t.offsetWidth, h = t.offsetHeight;
   t.style.left = Math.max(8, Math.min(innerWidth - w - 8, x - w / 2)) + 'px';
   t.style.top = (y - h - 14 < 8 ? y + 18 : y - h - 14) + 'px';
+  clearTimeout(tipTimer);
+  if (touch) tipTimer = setTimeout(hideTip, 2500);
 }
 function hideTip() {
+  if (!tipOn) return;
+  tipOn = false;
   $('#tip').style.display = 'none';
   document.querySelectorAll('.xh,.xm').forEach((el) => (el.style.visibility = 'hidden'));
 }
 function hover(e) {
+  const touch = e.pointerType === 'touch';
   const svg = e.target.closest && e.target.closest('svg[data-ch]');
   const c = svg && CH[svg.dataset.ch];
   if (c) {
@@ -293,15 +493,16 @@ function hover(e) {
     const xh = svg.querySelector('.xh'), xm = svg.querySelector('.xm');
     xh.setAttribute('x1', x); xh.setAttribute('x2', x); xh.style.visibility = 'visible';
     xm.setAttribute('cx', x); xm.setAttribute('cy', c.ys[i]); xm.style.visibility = 'visible';
-    return showTip(`${p.x}\n${fmt(p.y)} ${c.unit}${c.hasAvg ? ` · avg ${fmt(p.avg)}` : ''}`, e.clientX, r.top + (c.ys[i] / c.H) * r.height);
+    return showTip(`${p.x}\n${fmt(p.y)} ${c.unit}${c.hasAvg ? ` · avg ${fmt(p.avg)}` : ''}`, e.clientX, r.top + (c.ys[i] / c.H) * r.height, touch);
   }
+  if (touch && e.type === 'pointermove') return; // scrolling with a finger must stay cheap
   const el = e.target.closest && e.target.closest('[data-tip]');
-  if (el) showTip(el.dataset.tip, e.clientX, el.getBoundingClientRect().top + 4);
+  if (el) showTip(el.dataset.tip, e.clientX, el.getBoundingClientRect().top + 4, touch);
   else hideTip();
 }
-document.addEventListener('pointermove', hover);
-document.addEventListener('pointerdown', hover);
-document.addEventListener('scroll', hideTip, true);
+document.addEventListener('pointermove', hover, { passive: true });
+document.addEventListener('pointerdown', hover, { passive: true });
+document.addEventListener('scroll', hideTip, { capture: true, passive: true });
 
 // ---------- views ----------
 const workoutCard = (w) => `<div class="card tap" data-a="openWorkout" data-id="${w.id}">
@@ -311,7 +512,7 @@ const workoutCard = (w) => `<div class="card tap" data-a="openWorkout" data-id="
 
 const views = {
   async home() {
-    const [stats, recent] = await Promise.all([api('/stats?today=' + localDate()), api('/workouts?limit=4')]);
+    const [stats, recent] = await Promise.all([get('/stats?today=' + localDate()), get('/workouts?limit=4')]);
     S.unit = stats.unit;
     const active = store.get('gt_active');
     const activeW = active && recent.find((w) => w.id === active);
@@ -331,7 +532,7 @@ const views = {
   },
 
   async history() {
-    const list = await api('/workouts?limit=300');
+    const list = await get('/workouts?limit=300');
     let out = '<h1>History</h1>', month = '';
     for (const w of list) {
       const m = new Date(w.date + 'T12:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -342,14 +543,14 @@ const views = {
   },
 
   async exercises() {
-    S.exercises = await api('/exercises');
+    S.exercises = await get('/exercises');
     return `<div class="row"><h1 class="grow">Exercises</h1><button class="btn" data-a="editExercise">+ New</button></div>
       <input id="exq" placeholder="Search exercises" autocomplete="off">
       <div id="exlist">${exerciseList('')}</div>`;
   },
 
   async prs() {
-    const prs = await api('/prs');
+    const prs = await get('/prs');
     return `<h1>Personal records</h1>` + (prs.length ? prs.map((p) => `<div class="card tap" data-a="openExercise" data-id="${p.exercise_id}">
         <div class="row"><div class="grow title trunc">${esc(p.name)}</div><div class="muted small">${niceDate(p.last_pr_date)}</div></div>
         <div class="row" style="margin-top:4px"><div class="grow">
@@ -362,7 +563,7 @@ const views = {
     const r = S.range || 'all';
     let from = '';
     if (r !== 'all') { const x = new Date(); x.setDate(x.getDate() - +r); from = localDate(x); }
-    const d = await api(`/insights?today=${localDate()}${from ? '&from=' + from : ''}`);
+    const d = await get(`/insights?today=${localDate()}${from ? '&from=' + from : ''}`);
     S.unit = d.unit;
     const s = d.summary, bw = d.bodyweight, u = d.unit;
     if (!s.all_time_workouts) return '<h1>Insights</h1><div class="empty">Log some workouts to see your analysis here.</div>';
@@ -472,7 +673,7 @@ const views = {
   },
 
   async more() {
-    const [stats, bw] = await Promise.all([api('/stats?today=' + localDate()), api('/bodyweight?limit=120')]);
+    const [stats, bw] = await Promise.all([get('/stats?today=' + localDate()), get('/bodyweight?limit=120')]);
     S.unit = stats.unit;
     const max = Math.max(1, ...stats.weeks.map((w) => w.workouts));
     const pts = bw.slice().reverse().map((b) => ({ x: niceDate(b.date), y: b.weight }));
@@ -487,7 +688,7 @@ const views = {
         <div class="row muted small" style="margin-top:6px"><div class="grow">12 weeks ago</div><div>this week</div></div></div>
       <h2>Body weight</h2>
       <div class="card">
-        <div class="row"><input id="bwv" type="number" inputmode="decimal" step="0.1" placeholder="${S.unit}" aria-label="Body weight" style="flex:0 0 84px"><input id="bwd" type="date" value="${localDate()}" aria-label="Date"><button class="btn primary" data-a="addBw">Save</button></div>
+        <div class="bwrow"><input id="bwv" type="number" inputmode="decimal" step="0.1" placeholder="${S.unit}" aria-label="Body weight"><input id="bwd" type="date" value="${localDate()}" aria-label="Date"><button class="btn primary" data-a="addBw">Save</button></div>
         <div style="margin-top:12px">${pts.length ? lineChart(pts, S.unit) : '<div class="muted small">No entries yet.</div>'}</div>
         ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div><button class="btn ghost" data-a="delBw" data-id="${b.id}" aria-label="Delete entry">✕</button></div>`).join('')}
       </div>
@@ -519,39 +720,100 @@ function exerciseList(q) {
   }).join('');
 }
 
-async function vWorkout(id) {
-  if (!S.exercises.length) S.exercises = await api('/exercises');
-  const pending = store.get('gt_pending_' + id, []);
-  const w = await api(`/workouts/${id}?extra=${pending.join(',')}`);
-  S.wk = w;
-  const cards = w.exercises.slice();
-  for (const pid of pending) {
-    if (cards.some((c) => c.exercise_id === pid)) continue;
-    const ex = S.exercises.find((e) => e.id === pid);
-    if (ex) cards.push({ exercise_id: pid, name: ex.name, sets: [], pending: true });
-  }
-  const card = (c) => {
-    const prev = w.previous[c.exercise_id];
-    const lastSet = c.sets[c.sets.length - 1] || prev?.sets.filter((s) => !s.is_warmup)[0] || prev?.sets[0];
-    let n = 0;
-    return `<div class="card">
-      <div class="row"><div class="grow title trunc" data-a="openExercise" data-id="${c.exercise_id}" style="cursor:pointer">${esc(c.name)}</div>
-        ${c.pending ? `<button class="btn ghost" data-a="dropPending" data-id="${c.exercise_id}" aria-label="Remove exercise">✕</button>` : ''}</div>
-      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}</div>
-      ${c.sets.map((s) => `<div class="set" data-a="editSet" data-id="${s.id}" data-ex="${c.exercise_id}">
-        <div class="n">${s.is_warmup ? 'W' : ++n}</div>
-        <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
-        <div>${s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('')}
-      <div class="addset">
-        <input id="w-${c.exercise_id}" type="number" inputmode="decimal" step="any" placeholder="${S.unit}" value="${lastSet ? fmt(lastSet.weight) : ''}" aria-label="Weight">
-        <input id="r-${c.exercise_id}" type="number" inputmode="numeric" placeholder="reps" value="${lastSet && lastSet.reps ? lastSet.reps : ''}" aria-label="Reps">
-        <button class="btn toggle ${S.warm[c.exercise_id] ? 'on' : ''}" data-a="warm" data-id="${c.exercise_id}" title="Warm-up set" aria-label="Warm-up set">W</button>
-        <button class="btn primary" data-a="addSet" data-id="${c.exercise_id}" aria-label="Add set">＋</button>
-      </div></div>`;
+// ---------- workout screen ----------
+const pendingOf = (id) => store.get('gt_pending_' + id, []);
+const exById = (id) => S.exercises.find((e) => e.id === id);
+const isPlatesSet = (s) => /^plates\b/.test((s && s.notes) || '');
+
+// What is on screen = what the server has + sets still waiting in the queue + exercises added but not yet used.
+function workoutCards(w) {
+  const cards = w.exercises.map((e) => ({ ...e, sets: e.sets.slice() }));
+  const card = (id) => {
+    let c = cards.find((x) => x.exercise_id === id);
+    if (!c) { c = { exercise_id: id, name: (exById(id) || {}).name || 'Exercise', sets: [] }; cards.push(c); }
+    return c;
   };
-  return `<div class="hdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
-      <input class="name grow" id="wname" value="${esc(w.name)}" aria-label="Workout name"><span id="rest"></span></div>
-    <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${w.date}" style="width:auto"><div class="grow right muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit}</div></div>
+  for (const op of outbox) {
+    if (op.wid !== w.id) continue;
+    for (const st of op.body.sets) card(op.body.exercise_id).sets.push({ id: op.id, weight: +st.weight, reps: +st.reps, is_warmup: st.warmup ? 1 : 0, notes: st.notes || '', saving: true });
+  }
+  for (const pid of pendingOf(w.id)) if (exById(pid)) card(pid);
+  return cards;
+}
+function setsHtml(c) {
+  let n = 0;
+  return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'savingInfo' : 'editSet'}" data-id="${s.id}">
+    <div class="n">${s.is_warmup ? 'W' : ++n}</div>
+    <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
+    <div>${s.saving ? '<span class="muted small">saving…</span>' : s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('');
+}
+function totalsText(cards) {
+  const sets = cards.flatMap((c) => c.sets);
+  const vol = sets.reduce((v, s) => v + (s.is_warmup || isPlatesSet(s) ? 0 : s.weight * s.reps), 0);
+  return `${sets.length} set${sets.length === 1 ? '' : 's'} · ${big(vol)} ${S.unit}`;
+}
+const prevOf = (w, id) => w.previous[id] || S.prevExtra[id] || null;
+// Is this exercise logged as machine plates rather than weight? Follows the last set unless switched by hand.
+function usesPlates(w, c) {
+  if (S.plates[c.exercise_id] != null) return S.plates[c.exercise_id];
+  const prev = prevOf(w, c.exercise_id);
+  return isPlatesSet(c.sets.at(-1) || (prev && prev.sets.at(-1)));
+}
+// Update only the set lists and totals, leaving the inputs (and the keyboard) alone.
+function paintWorkout() {
+  syncBadge();
+  if (!S.view || S.view.type !== 'workout' || !S.wk || S.wk.id !== S.view.id) return;
+  const cards = workoutCards(S.wk);
+  for (const c of cards) {
+    const box = $('#sets-' + c.exercise_id);
+    if (!box) return softRender();
+    box.innerHTML = setsHtml(c);
+    const rm = c.sets.length && document.querySelector(`#card-${c.exercise_id} [data-a="dropPending"]`);
+    if (rm) rm.remove();
+  }
+  const t = $('#wtotals');
+  if (t) t.textContent = totalsText(cards);
+}
+
+async function vWorkout(id) {
+  if (!S.exercises.length) S.exercises = await get('/exercises');
+  const w = await get('/workouts/' + id);
+  S.wk = w;
+  // "Last time" for exercises that were added but have no sets yet.
+  for (const pid of pendingOf(id)) {
+    if (pid in S.prevExtra || w.previous[pid]) continue;
+    S.prevExtra[pid] = null;
+    get(`/exercises/${pid}?limit=2`).then((d) => {
+      const s = d.sessions.find((x) => x.workout_id !== id);
+      if (s) { S.prevExtra[pid] = { date: s.date, sets: s.sets }; softRender(); }
+    }).catch(() => {});
+  }
+  const cards = workoutCards(w);
+  const card = (c) => {
+    const prev = prevOf(w, c.exercise_id);
+    const lastSet = c.sets.at(-1) || (prev && (prev.sets.filter((s) => !s.is_warmup)[0] || prev.sets[0]));
+    const pl = usesPlates(w, c), x = c.exercise_id;
+    return `<div class="card" id="card-${x}">
+      <div class="row"><div class="grow title trunc" data-a="openExercise" data-id="${x}">${esc(c.name)}</div>
+        ${c.sets.length ? '' : `<button class="btn ghost" data-a="dropPending" data-id="${x}" aria-label="Remove exercise">✕</button>`}</div>
+      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}</div>
+      <div id="sets-${x}">${setsHtml(c)}</div>
+      <div class="logger">
+        <div><div class="cap"><span id="ucap-${x}">Weight (${pl ? 'plates' : S.unit})</span><button data-a="toggleUnit" data-id="${x}" id="ubtn-${x}">use ${pl ? S.unit : 'plates'}</button></div>
+          <div class="stepper"><button data-a="step" data-f="w" data-id="${x}" data-d="-1" aria-label="Less weight">−</button>
+            <input id="w-${x}" type="number" inputmode="decimal" step="any" placeholder="0" value="${lastSet ? fmt(lastSet.weight) : ''}" aria-label="Weight" enterkeyhint="next">
+            <button data-a="step" data-f="w" data-id="${x}" data-d="1" aria-label="More weight">+</button></div></div>
+        <div><div class="cap"><span>Reps</span></div>
+          <div class="stepper"><button data-a="step" data-f="r" data-id="${x}" data-d="-1" aria-label="Fewer reps">−</button>
+            <input id="r-${x}" type="number" inputmode="numeric" placeholder="0" value="${lastSet && lastSet.reps ? lastSet.reps : ''}" aria-label="Reps" enterkeyhint="done">
+            <button data-a="step" data-f="r" data-id="${x}" data-d="1" aria-label="More reps">+</button></div></div>
+      </div>
+      <div class="logrow"><button class="btn toggle ${S.warm[x] ? 'on' : ''}" data-a="warm" data-id="${x}">Warm-up</button>
+        <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div>`;
+  };
+  return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
+      <input class="name" id="wname" value="${esc(w.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span></div>
+    <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${w.date}" style="width:auto;flex:0 0 auto" aria-label="Workout date"><div id="wtotals" class="grow right muted small">${totalsText(cards)}</div></div>
     ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
     <button class="btn block" data-a="pickExercise">+ Add exercise</button>
     <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(w.notes)}</textarea>
@@ -560,7 +822,7 @@ async function vWorkout(id) {
 }
 
 async function vExercise(id) {
-  const d = await api('/exercises/' + id);
+  const d = await get('/exercises/' + id);
   const e = d.exercise, r = d.records;
   S.ex = e;
   const weighted = !!r.best_e1rm;
@@ -571,7 +833,7 @@ async function vExercise(id) {
   const val = { e1rm: (s) => s.best_e1rm, top: (s) => s.top_weight, vol: (s) => s.volume, reps: (s) => Math.max(...work(s).map((x) => x.reps)) }[metric[0]];
   const pts = d.sessions.slice().reverse().filter((s) => work(s).length).map((s) => ({ x: niceDate(s.date), y: val(s) }));
   const rec = (label, v, text) => (v ? `<div class="tile"><b>${text}</b><span>${label} · ${niceDate(v.date)}</span></div>` : '');
-  return `<div class="hdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button><h1 class="grow trunc" style="margin:0">${esc(e.name)}</h1><button class="btn" data-a="editExercise" data-id="${e.id}">Edit</button></div>
+  return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button><h1 class="grow trunc" style="margin:0;font-size:20px">${esc(e.name)}</h1><button class="btn" data-a="editExercise" data-id="${e.id}">Edit</button></div>
     <div class="muted small">${esc(e.muscle_group)} · ${esc(e.equipment)} · ${d.total_sessions} session${d.total_sessions === 1 ? '' : 's'}</div>
     ${e.notes ? `<div class="card small" style="margin-top:10px">${esc(e.notes)}</div>` : ''}
     <h2>Records</h2>
@@ -590,154 +852,254 @@ async function vExercise(id) {
       <div class="small">${s.sets.map((x) => (x.is_warmup ? `<span class="muted">${shortSet(x)}</span>` : shortSet(x))).join(' · ')}</div></div>`).join('') || '<div class="muted small">Nothing yet.</div>'}`;
 }
 
+// ---------- rendering and navigation ----------
 let renderSeq = 0;
-async function render() {
+const routeKey = () => (S.view ? S.view.type + ':' + S.view.id : 'tab:' + S.tab);
+const scrolls = {};
+
+async function render(opt = {}) {
   const seq = ++renderSeq;
   CH = {}; chN = 0;
   const main = $('#main');
   $('#tabs').hidden = !S.token;
-  if (!S.token) return (main.innerHTML = loginView());
+  if (!S.token) { main.innerHTML = loginView(); return; }
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', !S.view && b.dataset.t === S.tab));
+  // Cached screens paint within this tick; anything slower shows a placeholder instead of a frozen page.
+  let done = false;
+  if (!opt.soft) setTimeout(() => { if (!done && seq === renderSeq) main.innerHTML = '<div class="loading">Loading…</div>'; }, 150);
   let html;
   try {
-    html = S.view?.type === 'workout' ? await vWorkout(S.view.id) : S.view?.type === 'exercise' ? await vExercise(S.view.id) : await views[S.tab]();
+    html = S.view && S.view.type === 'workout' ? await vWorkout(S.view.id) : S.view && S.view.type === 'exercise' ? await vExercise(S.view.id) : await views[S.tab]();
   } catch (e) {
     if (!S.token) return render();
-    html = `<div class="empty">${esc(e.message)}<br><br><button class="btn" data-a="back">Go back</button></div>`;
+    if (S.view && e.status === 404) {
+      if (S.view.type === 'workout' && store.get('gt_active') === S.view.id) store.set('gt_active', null);
+      S.view = null;
+      history.replaceState({ tab: S.tab, view: null, depth: depth() }, '');
+      return render();
+    }
+    html = `<div class="empty">${esc(e.message)}<br><br><button class="btn" data-a="retry">Try again</button></div>`;
   }
-  if (seq === renderSeq) {
-    main.innerHTML = html;
-    hideTip();
-    main.querySelectorAll('.scroll-end').forEach((el) => (el.scrollLeft = el.scrollWidth));
-  }
+  done = true;
+  if (seq !== renderSeq) return;
+  // A background refresh must not wipe what is being typed.
+  const keep = {};
+  if (opt.soft) main.querySelectorAll('input[id],textarea[id]').forEach((el) => { if (el.value !== el.defaultValue) keep[el.id] = el.value; });
+  main.innerHTML = html;
+  for (const [id, v] of Object.entries(keep)) { const el = document.getElementById(id); if (el && el.type !== 'date') el.value = v; }
+  if (keep.exq) $('#exlist').innerHTML = exerciseList(keep.exq);
+  hideTip();
+  syncBadge();
+  main.querySelectorAll('.scroll-end').forEach((el) => (el.scrollLeft = el.scrollWidth));
+  if (opt.scroll != null) window.scrollTo(0, opt.scroll);
 }
-function go(view) { S.back = S.view; S.view = view; window.scrollTo(0, 0); return render(); }
+// Repaint after fresh data arrives, but never while the user is in a field (it would close the keyboard).
+function softRender() {
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && $('#main').contains(a)) { S.deferred = true; return; }
+  if (modalOpen()) { S.deferred = true; return; }
+  S.deferred = false;
+  render({ soft: true });
+}
+function setRoute(tab, view, push) {
+  scrolls[routeKey()] = window.scrollY;
+  S.tab = tab; S.view = view;
+  const st = { tab, view, depth: depth() + (push ? 1 : 0) };
+  if (push) history.pushState(st, ''); else history.replaceState(st, '');
+  window.scrollTo(0, 0);
+  return render();
+}
+const go = (view) => setRoute(S.tab, view, true);
+function goBack() { if (depth() > 0) history.back(); else setRoute(S.tab, null, false); }
+window.addEventListener('popstate', (e) => {
+  const st = e.state || { tab: 'home', view: null };
+  if (modalOpen()) hideModal();
+  if (popWait) { const done = popWait; popWait = null; done(); }
+  if (st.modal) return history.back(); // a dialog cannot be re-opened by going forward
+  if (st.tab === S.tab && JSON.stringify(st.view) === JSON.stringify(S.view)) { if (S.deferred) softRender(); return; }
+  scrolls[routeKey()] = window.scrollY;
+  S.tab = st.tab; S.view = st.view;
+  render({ scroll: scrolls[routeKey()] || 0 });
+});
 
 const loginView = () => `<div style="max-width:340px;margin:18vh auto 0;text-align:center">
   <h1>Gym Log</h1><p class="muted">Enter your access key to open your log.</p>
-  <form id="login"><input id="key" type="password" placeholder="Access key" autocomplete="current-password" aria-label="Access key">
+  <form id="login"><input id="key" type="password" placeholder="Access key" autocomplete="current-password" aria-label="Access key" enterkeyhint="go">
   <button class="btn primary block" style="margin-top:10px">Open</button><div id="lerr" class="small" style="color:var(--danger);margin-top:10px"></div></form></div>`;
-function logout() { S.token = ''; store.set('gt_token', null); S.view = null; }
+function logout() {
+  S.token = ''; S.view = null;
+  store.set('gt_token', null);
+  mem.clear(); outbox = [];
+  try { for (const k of Object.keys(localStorage)) if (k.startsWith('gc:') || k === 'gt_outbox') localStorage.removeItem(k); } catch {}
+}
 
 // ---------- actions ----------
-const pendingOf = (id) => store.get('gt_pending_' + id, []);
 const A = {
-  tab(el) { S.tab = el.dataset.t; S.view = null; window.scrollTo(0, 0); render(); },
-  back() { S.view = S.back && S.back !== S.view ? S.back : null; S.back = null; render(); },
+  tab(el) { setRoute(el.dataset.t, null, false); },
+  back() { goBack(); },
+  retry() { render(); },
   openWorkout(el) { go({ type: 'workout', id: +el.dataset.id }); },
-  openExercise(el) { closeModal(); go({ type: 'exercise', id: +el.dataset.id }); },
+  async openExercise(el) { await closeModal(); go({ type: 'exercise', id: +el.dataset.id }); },
   logout() { logout(); render(); },
-  range(el) { S.range = el.dataset.r; render(); },
-  exMetric(el) { S.exMetric = el.dataset.m; render(); },
+  range(el) { S.range = el.dataset.r; render({ soft: true }); },
+  exMetric(el) { S.exMetric = el.dataset.m; render({ soft: true }); },
 
   async newWorkout() {
     const h = new Date().getHours();
     const w = await api('/workouts', 'POST', { date: localDate(), name: (h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout' });
+    mergeWorkout(w);
     store.set('gt_active', w.id);
-    S.back = null; S.view = { type: 'workout', id: w.id };
-    await render();
+    await go({ type: 'workout', id: w.id });
     A.pickExercise();
   },
-  async finish() {
+  finish() {
     const w = S.wk;
+    const cards = workoutCards(w);
+    const prs = w.exercises.flatMap((e) => e.sets).filter((s) => s.is_pr).length;
     store.set('gt_active', null);
     store.set('gt_pending_' + w.id, null);
-    S.restAt = 0;
-    const prs = w.exercises.flatMap((e) => e.sets).filter((s) => s.is_pr).length;
-    S.view = null; S.tab = 'home';
-    await render();
-    toast(`Saved · ${w.set_count} sets${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}`);
+    S.restAt = 0; store.set('gt_rest', null);
+    touchAll();
+    goBack();
+    toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}`);
   },
   async delWorkout() {
     if (!confirm('Delete this workout and all its sets?')) return;
-    await api('/workouts/' + S.wk.id, 'DELETE');
-    if (store.get('gt_active') === S.wk.id) store.set('gt_active', null);
-    store.set('gt_pending_' + S.wk.id, null);
-    S.view = null; render(); toast('Workout deleted');
+    const id = S.wk.id;
+    await api('/workouts/' + id, 'DELETE');
+    outbox = outbox.filter((op) => op.wid !== id); saveOutbox();
+    if (store.get('gt_active') === id) store.set('gt_active', null);
+    store.set('gt_pending_' + id, null);
+    mem.delete('/workouts/' + id); store.set('gc:/workouts/' + id, null);
+    touchAll();
+    goBack();
+    toast('Workout deleted');
   },
   async repeat() {
     const src = S.wk;
     const w = await api('/workouts', 'POST', { date: localDate(), name: src.name });
+    mergeWorkout(w);
     store.set('gt_pending_' + w.id, src.exercises.map((e) => e.exercise_id));
     store.set('gt_active', w.id);
-    S.back = null; S.view = { type: 'workout', id: w.id };
-    window.scrollTo(0, 0);
-    await render(); toast('New workout with the same exercises');
+    await setRoute(S.tab, { type: 'workout', id: w.id }, false);
+    toast('New workout with the same exercises');
   },
 
-  pickExercise() {
-    modal(`<h3>Add exercise</h3><input id="pq" placeholder="Search or type a new name" autocomplete="off"><div id="plist" style="margin-top:8px"></div>`);
+  async pickExercise() {
+    if (!S.exercises.length) S.exercises = await get('/exercises');
+    modal('Add exercise', `<div class="stick"><input id="pq" type="search" placeholder="Search or type a new name" autocomplete="off" enterkeyhint="search"></div><div id="plist"></div>`);
     fillPicker('');
-    setTimeout(() => $('#pq')?.focus(), 50);
+    if (matchMedia('(pointer:fine)').matches) $('#pq').focus();
   },
   async choose(el) {
     let id = +el.dataset.id;
     if (!id) {
       const ex = await api('/exercises', 'POST', { name: el.dataset.name });
       S.exercises.push({ ...ex, set_count: 0, last_used: null });
+      touchAll();
       id = ex.id;
     }
     const wid = S.view.id, p = pendingOf(wid);
     if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
-    closeModal(); await render();
-    $('#w-' + id)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    await closeModal();
+    await render({ soft: true });
+    const card = $('#card-' + id);
+    if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
   },
-  dropPending(el) { store.set('gt_pending_' + S.view.id, pendingOf(S.view.id).filter((x) => x !== +el.dataset.id)); render(); },
+  dropPending(el) { store.set('gt_pending_' + S.view.id, pendingOf(S.view.id).filter((x) => x !== +el.dataset.id)); render({ soft: true }); },
   warm(el) { const id = el.dataset.id; S.warm[id] = !S.warm[id]; el.classList.toggle('on', S.warm[id]); },
-  async addSet(el) {
+  toggleUnit(el) {
     const id = +el.dataset.id;
-    const weight = $('#w-' + id).value, reps = $('#r-' + id).value;
-    if (reps === '' || +reps <= 0) { toast('Enter reps'); $('#r-' + id).focus(); return; }
-    const w = await api(`/workouts/${S.view.id}/sets`, 'POST', { exercise_id: id, sets: [{ weight: weight || 0, reps, warmup: !!S.warm[id] }] });
-    const s = w.exercises.find((e) => e.exercise_id === id).sets.at(-1);
-    S.warm[id] = false;
-    S.restAt = Date.now();
-    await render();
-    toast(s.is_pr ? 'New PR! 🏆' : 'Set logged');
+    const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    const pl = (S.plates[id] = !usesPlates(S.wk, c));
+    $('#ucap-' + id).textContent = `Weight (${pl ? 'plates' : S.unit})`;
+    el.textContent = `use ${pl ? S.unit : 'plates'}`;
   },
+  step(el) {
+    const id = +el.dataset.id, inp = $(`#${el.dataset.f}-${id}`);
+    let by = 1;
+    if (el.dataset.f === 'w') {
+      const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+      by = usesPlates(S.wk, c) ? 1 : S.unit === 'lb' ? 5 : 2.5;
+    }
+    inp.value = fmt(Math.max(0, (+inp.value || 0) + by * +el.dataset.d));
+  },
+  // Appears on screen immediately; the request goes through the offline queue.
+  addSet(el) {
+    const id = +el.dataset.id, wid = S.view.id;
+    const weight = +$('#w-' + id).value || 0, reps = Math.round(+$('#r-' + id).value || 0);
+    if (reps <= 0) { toast('Enter reps'); return; }
+    const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    outbox.push({
+      id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), wid, method: 'POST', path: `/workouts/${wid}/sets`,
+      body: { exercise_id: id, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '' }] },
+    });
+    saveOutbox();
+    if (S.warm[id]) { S.warm[id] = false; const b = $(`[data-a="warm"][data-id="${id}"]`); if (b) b.classList.remove('on'); }
+    S.restAt = Date.now(); store.set('gt_rest', S.restAt);
+    if (navigator.vibrate) navigator.vibrate(12);
+    paintWorkout();
+    pump();
+  },
+  savingInfo() { toast(syncFailing ? 'Waiting for a connection to save this set' : 'Saving this set…'); },
   editSet(el) {
     const s = S.wk.exercises.flatMap((e) => e.sets).find((x) => x.id === +el.dataset.id);
-    modal(`<h3>Edit set</h3><div class="grid2"><div><label for="es-w">Weight (${S.unit})</label><input id="es-w" type="number" inputmode="decimal" step="any" value="${fmt(s.weight)}"></div>
+    if (!s) return;
+    modal('Edit set', `<div class="grid2"><div><label for="es-w">Weight (${unitOf(s)})</label><input id="es-w" type="number" inputmode="decimal" step="any" value="${fmt(s.weight)}"></div>
       <div><label for="es-r">Reps</label><input id="es-r" type="number" inputmode="numeric" value="${s.reps}"></div></div>
       <div class="grid2"><div><label for="es-rpe">RPE (optional)</label><input id="es-rpe" type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${fmt(s.rpe)}"></div>
       <div><label for="es-wu">Type</label><select id="es-wu"><option value="0">Working set</option><option value="1"${s.is_warmup ? ' selected' : ''}>Warm-up</option></select></div></div>
-      <label for="es-n">Note</label><input id="es-n" value="${esc(s.notes)}">
-      <div class="grid2" style="margin-top:14px"><button class="btn danger" data-a="delSet" data-id="${s.id}">Delete set</button><button class="btn primary" data-a="saveSet" data-id="${s.id}">Save</button></div>`);
+      <label for="es-n">Note</label><input id="es-n" value="${esc(s.notes)}" enterkeyhint="done">
+      <div class="grid2" style="margin-top:16px"><button class="btn danger" data-a="delSet" data-id="${s.id}">Delete set</button><button class="btn primary" data-a="saveSet" data-id="${s.id}">Save</button></div>`);
   },
   async saveSet(el) {
-    await api('/sets/' + el.dataset.id, 'PATCH', { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value });
-    closeModal(); render();
+    const w = await api('/sets/' + el.dataset.id, 'PATCH', { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value });
+    mergeWorkout(w);
+    await closeModal();
+    paintWorkout();
   },
-  async delSet(el) { await api('/sets/' + el.dataset.id, 'DELETE'); closeModal(); render(); },
+  async delSet(el) {
+    const w = await api('/sets/' + el.dataset.id, 'DELETE');
+    mergeWorkout(w);
+    await closeModal();
+    render({ soft: true });
+  },
 
   editExercise(el) {
     const e = el.dataset.id ? S.ex : { name: '', muscle_group: 'Other', equipment: 'Other', notes: '' };
-    modal(`<h3>${e.id ? 'Edit' : 'New'} exercise</h3><label for="ee-n">Name</label><input id="ee-n" value="${esc(e.name)}">
+    modal(`${e.id ? 'Edit' : 'New'} exercise`, `<label for="ee-n" style="margin-top:0">Name</label><input id="ee-n" value="${esc(e.name)}" enterkeyhint="done">
       <div class="grid2"><div><label for="ee-g">Muscle group</label><select id="ee-g">${opts(GROUPS, e.muscle_group)}</select></div>
       <div><label for="ee-q">Equipment</label><select id="ee-q">${opts(EQUIP, e.equipment)}</select></div></div>
       <label for="ee-t">Notes (cues, setup)</label><textarea id="ee-t">${esc(e.notes)}</textarea>
-      <div class="grid2" style="margin-top:14px">${e.id ? `<button class="btn danger" data-a="delExercise" data-id="${e.id}">Delete</button>` : '<button class="btn" data-a="closeModal">Cancel</button>'}
+      <div class="grid2" style="margin-top:16px">${e.id ? `<button class="btn danger" data-a="delExercise" data-id="${e.id}">Delete</button>` : '<button class="btn" data-a="closeModal">Cancel</button>'}
       <button class="btn primary" data-a="saveExercise" data-id="${e.id || ''}">Save</button></div>`);
   },
   async saveExercise(el) {
     const body = { name: $('#ee-n').value, muscle_group: $('#ee-g').value, equipment: $('#ee-q').value, notes: $('#ee-t').value };
-    await (el.dataset.id ? api('/exercises/' + el.dataset.id, 'PATCH', body) : api('/exercises', 'POST', body));
-    S.exercises = []; closeModal(); render();
+    const ex = await (el.dataset.id ? api('/exercises/' + el.dataset.id, 'PATCH', body) : api('/exercises', 'POST', body));
+    S.exercises = []; touchAll();
+    mem.delete('/exercises/' + ex.id);
+    await closeModal();
+    render({ soft: true });
   },
   async delExercise(el) {
     if (!confirm('Delete this exercise and every set logged for it?')) return;
     await api('/exercises/' + el.dataset.id, 'DELETE');
-    S.exercises = []; closeModal(); S.view = null; S.tab = 'exercises'; render();
+    S.exercises = []; touchAll();
+    await closeModal();
+    goBack();
   },
-  closeModal,
+  closeModal() { return closeModal(); },
 
   async addBw() {
     const v = $('#bwv').value;
     if (!v) return toast('Enter a weight');
     await api('/bodyweight', 'POST', { weight: v, date: $('#bwd').value });
-    render(); toast('Body weight saved');
+    $('#bwv').value = '';
+    $('#bwv').blur();
+    touchAll(); render({ soft: true }); toast('Body weight saved');
   },
-  async delBw(el) { await api('/bodyweight/' + el.dataset.id, 'DELETE'); render(); },
+  async delBw(el) { await api('/bodyweight/' + el.dataset.id, 'DELETE'); touchAll(); render({ soft: true }); },
   async copyMcp(el) {
     const url = location.origin + '/mcp' + (el.dataset.k === '1' ? '/' + encodeURIComponent(S.token) : '');
     try { await navigator.clipboard.writeText(url); toast('Copied'); } catch { prompt('Copy this URL', url); }
@@ -746,20 +1108,25 @@ const A = {
 
 function fillPicker(q) {
   const t = q.trim().toLowerCase();
-  const inWorkout = new Set([...(S.wk?.exercises || []).map((e) => e.exercise_id), ...pendingOf(S.view.id)]);
+  const inWorkout = new Set(workoutCards(S.wk).map((c) => c.exercise_id));
   const list = S.exercises.filter((e) => !t || e.name.toLowerCase().includes(t) || e.muscle_group.toLowerCase().includes(t))
     .sort((a, b) => (b.last_used || '').localeCompare(a.last_used || '') || a.name.localeCompare(b.name));
   const exact = S.exercises.some((e) => e.name.toLowerCase() === t);
   $('#plist').innerHTML = (t && !exact ? `<div class="pick" data-a="choose" data-name="${esc(q.trim())}" style="color:var(--accent)">+ Create “${esc(q.trim())}”</div>` : '') +
-    list.map((e) => `<div class="pick row" data-a="choose" data-id="${e.id}"><div class="grow trunc">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="muted small">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>`).join('');
+    list.map((e) => `<div class="pick" data-a="choose" data-id="${e.id}"><div class="grow trunc" style="flex:1;min-width:0">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="muted small">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>`).join('');
 }
 
 // ---------- events ----------
 document.addEventListener('click', async (ev) => {
-  if (ev.target.id === 'modal') return closeModal();
   const el = ev.target.closest('[data-a]');
-  if (!el || !A[el.dataset.a]) return;
-  try { await A[el.dataset.a](el); } catch (e) { toast(e.message); }
+  if (!el || !A[el.dataset.a] || el.dataset.busy) return;
+  try {
+    const r = A[el.dataset.a](el);
+    if (r && r.then) {
+      el.dataset.busy = '1'; el.classList.add('busy');
+      try { await r; } finally { delete el.dataset.busy; el.classList.remove('busy'); }
+    }
+  } catch (e) { toast(e.message); }
 });
 document.addEventListener('input', (ev) => {
   if (ev.target.id === 'pq') fillPicker(ev.target.value);
@@ -768,26 +1135,48 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('change', async (ev) => {
   const t = ev.target;
   try {
-    if (t.id === 'wname') await api('/workouts/' + S.view.id, 'PATCH', { name: t.value });
-    if (t.id === 'wnotes') await api('/workouts/' + S.view.id, 'PATCH', { notes: t.value });
-    if (t.id === 'wdate' && t.value) { await api('/workouts/' + S.view.id, 'PATCH', { date: t.value }); render(); }
+    if (t.id === 'wname') mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { name: t.value }));
+    if (t.id === 'wnotes') mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { notes: t.value }));
+    if (t.id === 'wdate' && t.value) mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { date: t.value }));
     if (t.id === 'theme') applyTheme(t.value);
-    if (t.id === 'unit') { await api('/settings', 'PUT', { unit: t.value }); S.unit = t.value; render(); }
+    if (t.id === 'unit') { await api('/settings', 'PUT', { unit: t.value }); S.unit = t.value; store.set('gt_unit', t.value); touchAll(); render({ soft: true }); }
   } catch (e) { toast(e.message); }
 });
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') closeModal();
-  if (ev.key === 'Enter' && /^[wr]-\d+$/.test(ev.target.id)) $(`[data-a="addSet"][data-id="${ev.target.id.slice(2)}"]`)?.click();
+  if (ev.key !== 'Enter') return;
+  const id = ev.target.id || '';
+  if (/^w-\d+$/.test(id)) { ev.preventDefault(); $('#r-' + id.slice(2)).focus(); }
+  else if (/^r-\d+$/.test(id)) { ev.preventDefault(); ev.target.blur(); $(`[data-a="addSet"][data-id="${id.slice(2)}"]`).click(); }
+  else if (ev.target.tagName === 'INPUT' && ev.target.id !== 'key') ev.target.blur();
+});
+// Hide the tab bar while typing so it never sits on top of the keyboard, and select-all on focus for quick overwrite.
+document.addEventListener('focusin', (ev) => {
+  const t = ev.target;
+  if (!/^(INPUT|TEXTAREA)$/.test(t.tagName) || t.type === 'date') return;
+  document.body.classList.add('kb');
+  if (t.type === 'number') setTimeout(() => { try { t.select(); } catch {} }, 0);
+});
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== 'date') return;
+    document.body.classList.remove('kb');
+    if (S.deferred) softRender();
+  }, 80);
 });
 document.addEventListener('submit', async (ev) => {
   if (ev.target.id !== 'login') return;
   ev.preventDefault();
+  const btn = ev.target.querySelector('button');
+  btn.classList.add('busy');
   S.token = $('#key').value.trim();
   try {
     S.unit = (await api('/settings')).unit || 'kg';
-    store.set('gt_token', S.token);
+    store.set('gt_token', S.token); store.set('gt_unit', S.unit);
+    document.activeElement && document.activeElement.blur();
     render();
-  } catch (e) { S.token = ''; const le = $('#lerr'); if (le) le.textContent = e.message; }
+  } catch (e) { S.token = ''; btn.classList.remove('busy'); const le = $('#lerr'); if (le) le.textContent = e.message; }
 });
 setInterval(() => {
   const r = $('#rest');
@@ -796,13 +1185,19 @@ setInterval(() => {
   r.textContent = s >= 0 && s < 1800 ? `Rest ${Math.floor(s / 60)}:${pad(s % 60)}` : '';
 }, 1000);
 
-(async () => {
-  if (S.token) { try { S.unit = (await api('/settings')).unit || 'kg'; } catch {} }
+// ---------- start ----------
+(function start() {
+  pruneCache();
+  history.replaceState({ tab: 'home', view: null, depth: 0 }, '');
   const active = store.get('gt_active');
-  if (S.token && active) S.view = { type: 'workout', id: active };
-  await render();
-  // If the remembered workout was deleted elsewhere, fall back to the home tab.
-  if (active && S.view && $('#main .empty [data-a="back"]')) { store.set('gt_active', null); S.view = null; render(); }
+  if (S.token && active) {
+    S.view = { type: 'workout', id: active };
+    history.pushState({ tab: 'home', view: S.view, depth: 1 }, '');
+  }
+  render();
+  pump();
+  if (S.token) get('/settings').then((st) => { if (st.unit && st.unit !== S.unit) { S.unit = st.unit; store.set('gt_unit', st.unit); softRender(); } }).catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
 </script>
 </body>
