@@ -166,6 +166,16 @@ body.locked{overflow:hidden}
 .steps li{margin:4px 0}
 .ibanner{margin-bottom:14px;gap:8px}
 .ibanner .btn.primary{min-height:40px;padding:8px 16px}
+.more{font-size:22px;line-height:1;color:var(--muted);padding:0;margin:-8px -8px -8px 0;flex:0 0 auto}
+.pick .more,.card .row .more{align-self:center}
+#modal.menu{background:rgba(0,0,0,.5);justify-content:flex-end}
+#modal.menu .mhead{background:var(--card);border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;padding:14px 8px 4px 20px}
+#modal.menu .mhead h3{font-size:15px;color:var(--muted);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#modal.menu #sheet{flex:0 0 auto;width:100%;max-width:640px;background:var(--card);border:1px solid var(--line);border-top:0;padding:4px 8px calc(12px + env(safe-area-inset-bottom))}
+.mlist{display:flex;flex-direction:column}
+.mitem{display:flex;align-items:center;width:100%;min-height:52px;padding:0 12px;background:none;border:0;border-radius:12px;color:var(--text);font:inherit;font-size:16px;text-align:left;cursor:pointer}
+.mitem:active{background:var(--card2)}
+.mitem.danger{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -452,14 +462,35 @@ function toast(msg) {
 const modalOpen = () => $('#modal').classList.contains('open');
 const depth = () => (history.state && history.state.depth) || 0;
 let popWait = null;
-function modal(title, html) {
+function modal(title, html, opt) {
   $('#mtitle').textContent = title;
+  $('#modal').classList.toggle('menu', !!(opt && opt.menu));
   $('#sheet').innerHTML = html;
   $('#sheet').scrollTop = 0;
   if (modalOpen()) return;
   $('#modal').classList.add('open');
   document.body.classList.add('locked');
   history.pushState({ tab: S.tab, view: S.view, depth: depth() + 1, modal: true }, '');
+}
+// A short list of choices that slides up from the bottom; the phone's back button or a tap outside closes it.
+// items: [label, action, data, { danger }]; falsy items are skipped.
+function menu(title, items) {
+  const attrs = (data) => Object.entries(data || {}).map(([k, v]) => `data-${k}="${esc(String(v))}"`).join(' ');
+  modal(title, `<div class="mlist">${items.filter(Boolean).map(([label, a, data, o]) =>
+    `<button class="mitem${o && o.danger ? ' danger' : ''}" data-a="menuGo" data-go="${a}" ${attrs(data)}>${label}</button>`).join('')}</div>`, { menu: true });
+}
+function workoutText(w) {
+  const m = workoutMeta(w);
+  const cards = workoutCards(w).filter((c) => c.sets.length);
+  return `${m.name} · ${new Date(m.date + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} (${S.unit})\n` +
+    cards.map((c) => `${c.name}: ${c.sets.map((x) => (x.is_warmup ? 'w ' : '') + shortSet(x)).join(', ')}`).join('\n') +
+    (m.notes ? `\n\n${m.notes}` : '');
+}
+// Queue one or more sets for an exercise in the open workout.
+function logSets(id, sets) {
+  queue({ kind: 'sets', wid: S.view.id, exName: (exById(id) || {}).name, body: { exercise_id: id, sets } });
+  S.restAt = Date.now(); store.set('gt_rest', S.restAt);
+  paintWorkout();
 }
 function hideModal() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -631,7 +662,8 @@ document.addEventListener('scroll', hideTip, { capture: true, passive: true });
 
 // ---------- views ----------
 const workoutCard = (w) => `<div class="card tap" data-a="openWorkout" data-id="${w.id}">
-  <div class="row"><div class="grow title trunc">${esc(w.name)}</div><div class="muted small">${niceDate(w.date)}</div></div>
+  <div class="row"><div class="grow title trunc">${esc(w.name)}</div><div class="muted small">${niceDate(w.date)}</div>
+    <button class="btn ghost more" data-a="workoutMenu" data-id="${w.id}" data-name="${esc(w.name)}" aria-label="More options for ${esc(w.name)}">⋯</button></div>
   <div class="muted small trunc">${esc(w.exercises || 'No sets yet')}</div>
   <div class="muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit} volume${w.unsynced ? ' · <b style="color:var(--gold)">not synced yet</b>' : ''}</div></div>`;
 // Workouts started offline that the server has not seen yet, summarised like the server's list.
@@ -718,7 +750,8 @@ const views = {
   async prs() {
     const prs = await get('/prs');
     return `<h1>Personal records</h1>` + (prs.length ? prs.map((p) => `<div class="card tap" data-a="openExercise" data-id="${p.exercise_id}">
-        <div class="row"><div class="grow title trunc">${esc(p.name)}</div><div class="muted small">${niceDate(p.last_pr_date)}</div></div>
+        <div class="row"><div class="grow title trunc">${esc(p.name)}</div><div class="muted small">${niceDate(p.last_pr_date)}</div>
+          <button class="btn ghost more" data-a="exLibMenu" data-id="${p.exercise_id}" aria-label="Options for ${esc(p.name)}">⋯</button></div>
         <div class="row" style="margin-top:4px"><div class="grow">
           ${p.heaviest ? `<div>${recText(p.heaviest)} <span class="muted small">heaviest</span></div>` : `<div>${p.most_reps.reps} reps <span class="muted small">most reps</span></div>`}
         </div>${p.best_e1rm ? `<div class="right"><b>${fmt(p.best_e1rm.value)}</b> <span class="muted small">est. 1RM</span></div>` : ''}</div>
@@ -861,7 +894,7 @@ const views = {
       <div class="card">
         <div class="bwrow"><input id="bwv" type="number" inputmode="decimal" step="0.1" placeholder="${S.unit}" aria-label="Body weight"><input id="bwd" type="date" value="${localDate()}" aria-label="Date"><button class="btn primary" data-a="addBw">Save</button></div>
         <div style="margin-top:12px">${pts.length ? lineChart(pts, S.unit) : '<div class="muted small">No entries yet.</div>'}</div>
-        ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div>${b.id ? `<button class="btn ghost" data-a="delBw" data-id="${b.id}" aria-label="Delete entry">✕</button>` : '<span class="muted small" style="padding:0 8px">syncing</span>'}</div>`).join('')}
+        ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div>${b.id ? `<button class="btn ghost more" data-a="bwMenu" data-id="${b.id}" data-w="${fmt(b.weight)}" data-date="${b.date}" aria-label="Options for this entry">⋯</button>` : '<span class="muted small" style="padding:0 8px">syncing</span>'}</div>`).join('')}
       </div>
       ${installCard()}
       <h2>Units</h2>
@@ -888,7 +921,8 @@ function exerciseList(q) {
   return groups.map((g) => {
     const items = list.filter((e) => e.muscle_group === g);
     return items.length ? `<h2>${esc(g)}</h2><div class="card" style="padding:2px 14px">${items.map((e, i) => `<div class="pick row" style="${i ? '' : 'border-top:0'}" data-a="openExercise" data-id="${e.id}">
-      <div class="grow trunc">${esc(e.name)}</div><div class="muted small">${e.last_used ? niceDate(e.last_used) : esc(e.equipment)}</div></div>`).join('')}</div>` : '';
+      <div class="grow trunc">${esc(e.name)}</div><div class="muted small">${e.last_used ? niceDate(e.last_used) : esc(e.equipment)}</div>
+      <button class="btn ghost more" data-a="exLibMenu" data-id="${e.id}" aria-label="Options for ${esc(e.name)}">⋯</button></div>`).join('')}</div>` : '';
   }).join('');
 }
 
@@ -928,7 +962,7 @@ function workoutMeta(w) {
 }
 function setsHtml(c) {
   let n = 0;
-  return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'pendingSet' : 'editSet'}" data-id="${s.id}">
+  return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'pendingSet' : 'setMenu'}" data-id="${s.id}">
     <div class="n">${s.is_warmup ? 'W' : ++n}</div>
     <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
     <div>${s.saving ? '<span class="muted small">saving…</span>' : s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('');
@@ -978,7 +1012,7 @@ async function vWorkout(id) {
     const pl = usesPlates(w, c), x = c.exercise_id, pr = (exById(x) || {}).pr;
     return `<div class="card" id="card-${x}">
       <div class="row"><div class="grow title trunc" ${x > 0 ? `data-a="openExercise" data-id="${x}"` : ''}>${esc(c.name)}</div>
-        ${c.sets.length ? '' : `<button class="btn ghost" data-a="dropPending" data-id="${x}" aria-label="Remove exercise">✕</button>`}</div>
+        <button class="btn ghost more" data-a="exCardMenu" data-id="${x}" aria-label="Options for ${esc(c.name)}">⋯</button></div>
       <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}${pr ? `<br>PR: ${recText(pr)} (${niceDate(pr.date)})` : ''}</div>
       <div id="sets-${x}">${setsHtml(c)}</div>
       <div class="logger">
@@ -995,13 +1029,14 @@ async function vWorkout(id) {
         <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div>`;
   };
   return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
-      <input class="name" id="wname" value="${esc(meta.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span></div>
+      <input class="name" id="wname" value="${esc(meta.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span>
+      <button class="btn ghost more" data-a="workoutScreenMenu" aria-label="Workout options">⋯</button></div>
     <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${meta.date}" style="width:auto;flex:0 0 auto" aria-label="Workout date"><div id="wtotals" class="grow right muted small">${totalsText(cards)}</div></div>
     ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
     <button class="btn block" data-a="pickExercise">+ Add exercise</button>
     <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(meta.notes)}</textarea>
     <button class="btn primary block" style="margin-top:14px" data-a="finish">Finish workout</button>
-    <div class="grid2" style="margin-top:8px"><button class="btn" data-a="repeat">Repeat as new</button><button class="btn danger" data-a="delWorkout">Delete</button></div>`;
+    <div class="grid2" style="margin-top:8px"><button class="btn" data-a="repeatWorkout" data-id="${w.id}">Repeat as new</button><button class="btn danger" data-a="deleteWorkout" data-id="${w.id}">Delete</button></div>`;
 }
 
 async function vExercise(id) {
@@ -1016,7 +1051,7 @@ async function vExercise(id) {
   const val = { e1rm: (s) => s.best_e1rm, top: (s) => s.top_weight, vol: (s) => s.volume, reps: (s) => Math.max(...work(s).map((x) => x.reps)) }[metric[0]];
   const pts = d.sessions.slice().reverse().filter((s) => work(s).length).map((s) => ({ x: niceDate(s.date), y: val(s) }));
   const rec = (label, v, text) => (v ? `<div class="tile"><b>${text}</b><span>${label} · ${niceDate(v.date)}</span></div>` : '');
-  return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button><h1 class="grow trunc" style="margin:0;font-size:20px">${esc(e.name)}</h1><button class="btn" data-a="editExercise" data-id="${e.id}">Edit</button></div>
+  return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button><h1 class="grow trunc" style="margin:0;font-size:20px">${esc(e.name)}</h1><button class="btn ghost more" data-a="exLibMenu" data-id="${e.id}" aria-label="Exercise options">⋯</button></div>
     <div class="muted small">${esc(e.muscle_group)} · ${esc(e.equipment)} · ${d.total_sessions} session${d.total_sessions === 1 ? '' : 's'}</div>
     ${e.notes ? `<div class="card small" style="margin-top:10px">${esc(e.notes)}</div>` : ''}
     <h2>Records</h2>
@@ -1155,26 +1190,6 @@ const A = {
     goBack();
     toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}${outbox.length ? ' · will sync when online' : ''}`);
   },
-  delWorkout() {
-    if (!confirm('Delete this workout and all its sets?')) return;
-    const id = S.wk.id;
-    outbox = outbox.filter((op) => rid(op.wid) !== id || op.id === sendingId); saveOutbox();
-    // A workout that never reached the server only needs forgetting, unless it is being sent right now.
-    if (id > 0 || outbox.some((op) => op.wid === id)) queue({ kind: 'delWorkout', wid: id });
-    if (store.get('gt_active') === id) store.set('gt_active', null);
-    store.set('gt_pending_' + id, null);
-    store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== id));
-    mem.delete('/workouts/' + id); store.set('gc:/workouts/' + id, null);
-    touchAll();
-    goBack();
-    toast('Workout deleted');
-  },
-  async repeat() {
-    const src = S.wk;
-    const id = A.startWorkout(workoutMeta(src).name, workoutCards(src).map((c) => c.exercise_id));
-    await setRoute(S.tab, { type: 'workout', id }, false);
-    toast('New workout with the same exercises');
-  },
 
   async pickExercise() {
     S.exercises = await get('/exercises').catch(() => S.exercises);
@@ -1205,7 +1220,7 @@ const A = {
     const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
     const pl = (S.plates[id] = !usesPlates(S.wk, c));
     $('#ucap-' + id).textContent = `Weight (${pl ? 'plates' : S.unit})`;
-    el.textContent = `use ${pl ? S.unit : 'plates'}`;
+    $('#ubtn-' + id).textContent = `use ${pl ? S.unit : 'plates'}`;
   },
   step(el) {
     const id = +el.dataset.id, inp = $(`#${el.dataset.f}-${id}`);
@@ -1285,9 +1300,168 @@ const A = {
     await api('/exercises/' + el.dataset.id, 'DELETE');
     S.exercises = []; touchAll();
     await closeModal();
-    goBack();
+    if (S.view && S.view.type === 'exercise') goBack(); else render({ soft: true });
+    toast('Exercise deleted');
   },
   closeModal() { return closeModal(); },
+  // ---------- action menus ----------
+  // Runs the chosen menu item once the menu has closed, passing along the item's data-* values.
+  async menuGo(el) {
+    const data = { ...el.dataset };
+    await closeModal();
+    return A[data.go]({ dataset: data });
+  },
+  workoutMenu(el) {
+    const id = el.dataset.id;
+    menu(el.dataset.name || 'Workout', [
+      ['Open', 'openWorkout', { id }],
+      ['Repeat as a new workout', 'repeatWorkout', { id }],
+      ['Share or copy as text', 'shareWorkout', { id }],
+      ['Delete workout', 'deleteWorkout', { id }, { danger: true }],
+    ]);
+  },
+  workoutScreenMenu() {
+    const id = S.wk.id;
+    menu(workoutMeta(S.wk).name, [
+      ['Add exercise', 'pickExercise'],
+      ['Rename', 'focusName'],
+      ['Change date', 'pickDate'],
+      ['Share or copy as text', 'shareWorkout', { id }],
+      ['Repeat as a new workout', 'repeatWorkout', { id }],
+      ['Finish workout', 'finish'],
+      ['Delete workout', 'deleteWorkout', { id }, { danger: true }],
+    ]);
+  },
+  exCardMenu(el) {
+    const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    if (!c) return;
+    const prev = prevOf(S.wk, id), pl = usesPlates(S.wk, c);
+    menu(c.name, [
+      c.sets.length && ['Log the same as the last set', 'repeatSet', { id }],
+      prev && ['Copy all sets from last time', 'copyLast', { id }],
+      [pl ? `Switch to ${S.unit}` : 'Switch to machine plates', 'toggleUnit', { id }],
+      id > 0 && ['History & progress', 'openExercise', { id }],
+      ['Remove from workout', 'removeExercise', { id }, { danger: true }],
+    ]);
+  },
+  setMenu(el) {
+    const id = +el.dataset.id, s = workoutCards(S.wk).flatMap((c) => c.sets).find((x) => x.id === id);
+    if (!s) return;
+    menu(`${s.is_warmup ? 'Warm-up' : 'Set'} · ${setText(s)}`, [
+      ['Edit', 'editSet', { id }],
+      ['Duplicate', 'dupSet', { id }],
+      [s.is_warmup ? 'Mark as working set' : 'Mark as warm-up', 'toggleWarmSet', { id }],
+      ['Delete set', 'delSet', { id }, { danger: true }],
+    ]);
+  },
+  exLibMenu(el) {
+    const id = +el.dataset.id, e = exById(id) || (S.ex && S.ex.id === id ? S.ex : {});
+    const active = store.get('gt_active');
+    menu(e.name || 'Exercise', [
+      !(S.view && S.view.type === 'exercise') && ['History & progress', 'openExercise', { id }],
+      active && ['Add to current workout', 'addToWorkout', { id }],
+      ['Start a new workout with this', 'startWith', { id }],
+      ['Edit', 'editExerciseId', { id }],
+      ['Delete exercise', 'delExercise', { id }, { danger: true }],
+    ]);
+  },
+  bwMenu(el) {
+    menu(`${el.dataset.w} ${S.unit} · ${niceDate(el.dataset.date)}`, [
+      ['Edit', 'editBw', { w: el.dataset.w, date: el.dataset.date }],
+      ['Delete entry', 'delBw', { id: el.dataset.id }, { danger: true }],
+    ]);
+  },
+
+  // ---------- what the menu items do ----------
+  focusName() { const n = $('#wname'); n.focus(); n.select(); },
+  pickDate() { const d = $('#wdate'); try { d.showPicker(); } catch { d.focus(); d.click(); } },
+  async shareWorkout(el) {
+    const id = +el.dataset.id;
+    const w = S.wk && S.wk.id === rid(id) ? S.wk : await get('/workouts/' + rid(id));
+    const m = workoutMeta(w), text = workoutText(w);
+    if (navigator.share) {
+      try { await navigator.share({ title: m.name, text }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch { prompt('Copy this text', text); }
+  },
+  async repeatWorkout(el) {
+    const src = S.wk && S.wk.id === rid(+el.dataset.id) ? S.wk : await get('/workouts/' + rid(+el.dataset.id));
+    const id = A.startWorkout(workoutMeta(src).name, workoutCards(src).map((c) => c.exercise_id));
+    const view = { type: 'workout', id };
+    await (S.view && S.view.type === 'workout' ? setRoute(S.tab, view, false) : go(view));
+    toast('New workout with the same exercises');
+  },
+  deleteWorkout(el) {
+    const id = rid(+el.dataset.id);
+    if (!confirm('Delete this workout and all its sets?')) return;
+    outbox = outbox.filter((op) => rid(op.wid) !== id || op.id === sendingId); saveOutbox();
+    // A workout that never reached the server only needs forgetting, unless it is being sent right now.
+    if (id > 0 || outbox.some((op) => op.wid === id)) queue({ kind: 'delWorkout', wid: id });
+    if (rid(store.get('gt_active')) === id) store.set('gt_active', null);
+    store.set('gt_pending_' + id, null);
+    store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== id));
+    mem.delete('/workouts/' + id); store.set('gc:/workouts/' + id, null);
+    touchAll();
+    if (S.view && S.view.type === 'workout' && rid(S.view.id) === id) goBack();
+    else render({ soft: true });
+    toast('Workout deleted');
+  },
+  repeatSet(el) {
+    const id = +el.dataset.id, s = workoutCards(S.wk).find((x) => x.exercise_id === id).sets.at(-1);
+    logSets(id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' }]);
+  },
+  copyLast(el) {
+    const id = +el.dataset.id, prev = prevOf(S.wk, id);
+    logSets(id, prev.sets.map((s) => ({ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' })));
+    toast(`Added ${prev.sets.length} set${prev.sets.length === 1 ? '' : 's'} from ${niceDate(prev.date)}`);
+  },
+  removeExercise(el) {
+    const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    if (c.sets.length && !confirm(`Remove ${c.name} and its ${c.sets.length} set${c.sets.length === 1 ? '' : 's'}?`)) return;
+    for (const s of c.sets) {
+      if (s.saving) { if (s.id !== sendingId) outbox = outbox.filter((o) => o.id !== s.id); }
+      else outbox.push({ id: opId(), kind: 'delSet', wid: S.wk.id, setId: s.id });
+    }
+    saveOutbox();
+    store.set('gt_pending_' + S.view.id, pendingOf(S.view.id).filter((x) => rid(x) !== id));
+    pump();
+    render({ soft: true });
+  },
+  dupSet(el) {
+    const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.sets.some((s) => s.id === id)), s = c.sets.find((x) => x.id === id);
+    logSets(c.exercise_id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' }]);
+  },
+  toggleWarmSet(el) {
+    const setId = +el.dataset.id, s = workoutCards(S.wk).flatMap((c) => c.sets).find((x) => x.id === setId);
+    outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
+    queue({ kind: 'editSet', wid: S.wk.id, setId, body: { weight: s.weight, reps: s.reps, rpe: s.rpe || null, warmup: !s.is_warmup, notes: s.notes || '' } });
+    paintWorkout();
+  },
+  async editExerciseId(el) {
+    const id = +el.dataset.id;
+    S.ex = exById(id) || (await get('/exercises/' + id)).exercise;
+    A.editExercise({ dataset: { id } });
+  },
+  addToWorkout(el) {
+    const id = +el.dataset.id, wid = store.get('gt_active');
+    const p = pendingOf(wid);
+    if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+    go({ type: 'workout', id: wid });
+  },
+  startWith(el) {
+    const id = +el.dataset.id, e = exById(id) || S.ex || {};
+    const wid = A.startWorkout(e.name ? `${e.name} session` : 'Workout', [id]);
+    go({ type: 'workout', id: wid });
+  },
+  editBw(el) {
+    const v = $('#bwv'), d = $('#bwd');
+    if (!v) return;
+    v.value = el.dataset.w; d.value = el.dataset.date;
+    v.scrollIntoView({ block: 'center' });
+    v.focus();
+    toast('Change the value and tap Save');
+  },
+
   howInstall() { modal('Install Gym Log', `<div class="muted small" style="margin-bottom:6px">It opens full screen like a normal app and works without signal.</div>${installBody()}`); },
   noInstall() { store.set('gt_noinstall', 1); render({ soft: true }); },
   async install() { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; softRender(); },
@@ -1323,6 +1497,7 @@ function fillPicker(q) {
 
 // ---------- events ----------
 document.addEventListener('click', async (ev) => {
+  if (ev.target.id === 'modal' && $('#modal').classList.contains('menu')) return closeModal();
   const el = ev.target.closest('[data-a]');
   if (!el || !A[el.dataset.a] || el.dataset.busy) return;
   try {
