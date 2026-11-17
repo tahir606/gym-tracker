@@ -13,7 +13,8 @@ Data lives in a D1 (SQLite) database. No build step, no framework, no runtime de
 - **Exercise library** - 39 common exercises preloaded; add your own. Each has a progress chart and full history.
 - **Insights** - training calendar, workouts/sets/volume per month, weekday and split breakdown, muscle-group balance, rep ranges, progress per exercise, records over time and body-weight trend.
 - **Body weight log** with a smoothed trend line.
-- **Light and dark themes**, installable to a phone home screen.
+- **Installable, offline-first app (PWA)** - add it to your home screen; it opens without signal, shows your last-synced data on every screen, and queues everything you log (new workouts, sets, edits, body weight) until you are back online.
+- **Light and dark themes.**
 - **MCP server** with 16 tools, protected by the same access key as the app.
 
 ## Deploy your own

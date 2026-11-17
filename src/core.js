@@ -75,6 +75,7 @@ export async function listExercises(db, { search } = {}) {
     const lastId = list.at(-1).workout_id;
     const lastSets = list.filter((s) => s.workout_id === lastId);
     e.last = {
+      workout_id: lastId,
       date: list.at(-1).date,
       sets: lastSets.map((s) => ({ weight: s.weight, reps: s.reps, is_warmup: s.is_warmup, notes: s.notes })),
     };

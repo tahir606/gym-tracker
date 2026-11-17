@@ -10,7 +10,9 @@
 <meta name="apple-mobile-web-app-title" content="Gym Log">
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">
+<meta name="description" content="Gym Log: workouts, exercises and PRs. Works offline.">
 <title>Gym Log</title>
 <script>try{var t=JSON.parse(localStorage.getItem("gt_theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
@@ -208,7 +210,7 @@ matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncTheme
 const GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Other'];
 const EQUIP = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other'];
 
-const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, prevExtra: {}, restAt: store.get('gt_rest', 0), deferred: false };
+const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, used: new Set(), restAt: store.get('gt_rest', 0), deferred: false };
 
 // ---------- network, cache and offline queue ----------
 async function api(path, method = 'GET', body) {
@@ -267,7 +269,7 @@ function refresh(path) {
     .then((data) => {
       const old = mem.get(path);
       const c = cacheWrite(path, data);
-      if (old && old.json !== c.json) softRender();
+      if (old && old.json !== c.json && S.used.has(path)) softRender();
       return data;
     })
     .finally(() => inflight.delete(path));
@@ -275,7 +277,9 @@ function refresh(path) {
   return p;
 }
 function get(path) {
+  S.used.add(path);
   const c = cacheRead(path);
+  if (/\/-\d/.test(path)) return c ? Promise.resolve(c.data) : Promise.reject(Object.assign(new Error('Not found'), { status: 404 }));
   if (!c) return refresh(path);
   if (c.stale || Date.now() - c.t > 5000) { c.stale = false; refresh(path).catch(() => {}); }
   return Promise.resolve(c.data);
@@ -288,52 +292,148 @@ function pruneCache() {
   } catch {}
 }
 
-// Sets are logged optimistically: they appear at once and are sent from this queue, which survives
-// reloads and keeps retrying when the gym has no signal.
-let outbox = store.get('gt_outbox', []);
-let pumping = false, retryTimer = 0, syncFailing = false;
+// ---------- offline queue ----------
+// Every change is applied on screen at once and stored in this queue, which survives reloads and is sent in
+// order whenever there is a connection. Things created offline (workouts, exercises) get a temporary negative
+// id that is swapped for the real one once the server has it.
+let outbox = store.get('gt_outbox', []).map((op) => (op.kind ? op : { ...op, kind: 'sets' }));
+let idmap = store.get('gt_idmap', {});
+let pumping = false, retryTimer = 0, syncFailing = false, sendingId = null;
 const saveOutbox = () => store.set('gt_outbox', outbox);
+const rid = (id) => (id < 0 && idmap[id]) || id;
+let tempSeq = 0;
+const tempId = () => -(Date.now() * 10 + (tempSeq++ % 10));
+const opId = () => 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function queue(op) {
+  outbox.push({ id: opId(), ...op });
+  saveOutbox();
+  syncBadge();
+  pump();
+}
+// Exercises created offline, until their first set reaches the server.
+const localEx = () => store.get('gt_localex', []);
+const exById = (id) => S.exercises.find((e) => e.id === id) || localEx().find((e) => e.id === id);
+
+function opRequest(op) {
+  const wid = rid(op.wid);
+  switch (op.kind) {
+    case 'newWorkout': return ['/workouts', 'POST', op.body];
+    case 'sets': {
+      const ex = rid(op.body.exercise_id);
+      const body = { sets: op.body.sets, ...(ex > 0 ? { exercise_id: ex } : { exercise: op.exName }) };
+      return [`/workouts/${wid}/sets`, 'POST', body];
+    }
+    case 'patchWorkout': return ['/workouts/' + wid, 'PATCH', op.body];
+    case 'delWorkout': return ['/workouts/' + wid, 'DELETE'];
+    case 'editSet': return ['/sets/' + op.setId, 'PATCH', op.body];
+    case 'delSet': return ['/sets/' + op.setId, 'DELETE'];
+    case 'bw': return ['/bodyweight', 'POST', op.body];
+    case 'delBw': return ['/bodyweight/' + op.bwId, 'DELETE'];
+  }
+}
+function synced(op, res) {
+  synced.count = (synced.count || 0) + 1;
+  if (op.kind === 'newWorkout') return remapWorkout(op.wid, res);
+  if (op.kind === 'sets' && rid(op.body.exercise_id) < 0) {
+    const e = res.exercises.find((x) => x.name.toLowerCase() === op.exName.toLowerCase());
+    if (e) remapExercise(op.body.exercise_id, e.exercise_id);
+  }
+  if (res && res.exercises) mergeWorkout(res);
+  if (op.kind === 'sets') {
+    const s = (res.exercises.find((e) => e.exercise_id === rid(op.body.exercise_id)) || { sets: [] }).sets.at(-1);
+    if (s && s.is_pr) toast('New PR! 🏆');
+  }
+  if (op.kind === 'delWorkout') { mem.delete('/workouts/' + rid(op.wid)); store.set('gc:/workouts/' + rid(op.wid), null); }
+  if (op.kind === 'bw' || op.kind === 'delBw' || op.kind === 'delWorkout') { touchAll(); softRender(); }
+}
 async function pump() {
   if (pumping || !S.token) return;
   pumping = true;
   clearTimeout(retryTimer);
   while (outbox.length) {
     const op = outbox[0];
+    sendingId = op.id;
     try {
-      const w = await api(op.path, op.method, op.body);
-      outbox.shift(); saveOutbox();
+      const res = await api(...opRequest(op));
+      outbox = outbox.filter((o) => o.id !== op.id); saveOutbox();
       syncFailing = false;
-      mergeWorkout(w);
-      const s = (w.exercises.find((e) => e.exercise_id === op.body.exercise_id) || { sets: [] }).sets.at(-1);
-      if (s && s.is_pr) toast('New PR! 🏆');
-      paintWorkout();
+      synced(op, res);
     } catch (e) {
       if (e.network) { syncFailing = true; retryTimer = setTimeout(pump, 5000); break; }
-      outbox.shift(); saveOutbox();
-      toast('A set could not be saved: ' + e.message);
-      paintWorkout();
+      outbox = outbox.filter((o) => o.id !== op.id); saveOutbox();
+      // Deleting something that is already gone is fine; anything else is worth knowing about.
+      if (!(e.status === 404 && /^del/.test(op.kind))) toast('A change could not be saved: ' + e.message);
+      touchAll();
     }
+    paintWorkout();
   }
+  sendingId = null;
   pumping = false;
   syncBadge();
+  // Lists elsewhere may still show "not synced yet"; the workout screen updates itself in place.
+  if (synced.count && !(S.view && S.view.type === 'workout')) softRender();
+  synced.count = 0;
+}
+function remapWorkout(temp, w) {
+  idmap[temp] = w.id; store.set('gt_idmap', idmap);
+  for (const op of outbox) if (op.wid === temp) op.wid = w.id;
+  saveOutbox();
+  if (store.get('gt_active') === temp) store.set('gt_active', w.id);
+  const pend = store.get('gt_pending_' + temp);
+  if (pend) { store.set('gt_pending_' + w.id, pend); store.set('gt_pending_' + temp, null); }
+  mem.delete('/workouts/' + temp); store.set('gc:/workouts/' + temp, null);
+  store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== temp));
+  mergeWorkout(w);
+  if (S.wk && S.wk.id === temp) S.wk = w;
+  if (S.view && S.view.type === 'workout' && S.view.id === temp) {
+    S.view = { ...S.view, id: w.id };
+    if (history.state && !history.state.modal) history.replaceState({ ...history.state, view: S.view }, '');
+  }
+}
+function remapExercise(temp, real) {
+  idmap[temp] = real; store.set('gt_idmap', idmap);
+  for (const op of outbox) if (op.body && op.body.exercise_id === temp) op.body.exercise_id = real;
+  saveOutbox();
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('gt_pending_')) store.set(k, store.get(k, []).map((x) => (x === temp ? real : x)));
+  } catch {}
+  for (const m of [S.warm, S.plates]) if (temp in m) { m[real] = m[temp]; delete m[temp]; }
+  store.set('gt_localex', localEx().filter((e) => e.id !== temp));
+  touchAll();
+  refresh('/exercises').then((d) => { S.exercises = d; softRender(); }).catch(() => {});
 }
 function syncBadge() {
   const el = $('#sync');
-  const n = outbox.reduce((k, op) => k + op.body.sets.length, 0);
-  el.hidden = !(n && syncFailing);
-  el.textContent = `${n} set${n === 1 ? '' : 's'} waiting to sync`;
+  const n = outbox.length, off = navigator.onLine === false;
+  el.hidden = !(off || (n && syncFailing));
+  el.textContent = (off ? 'Offline' : 'No connection') + (n ? ` · ${n} change${n === 1 ? '' : 's'} waiting to sync` : '');
 }
-window.addEventListener('online', pump);
+window.addEventListener('online', () => { syncBadge(); pump(); });
+window.addEventListener('offline', syncBadge);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
 
 // Store a workout returned by the server, keeping "last time" info we already had.
 function mergeWorkout(w) {
   const path = '/workouts/' + w.id;
-  const old = mem.get(path);
-  if (old) w.previous = { ...old.data.previous, ...w.previous };
+  const old = cacheRead(path);
+  if (old && old.data.previous) w.previous = { ...old.data.previous, ...w.previous };
   touchAll();
   cacheWrite(path, w);
-  if (S.wk && S.wk.id === w.id) S.wk = w;
+  if (S.wk && rid(S.wk.id) === w.id) S.wk = w;
+}
+const deletedWorkouts = () => new Set(outbox.filter((o) => o.kind === 'delWorkout').map((o) => rid(o.wid)));
+
+// While online, quietly load every screen and recent workouts so the whole app works later without signal.
+async function prefetch() {
+  if (navigator.onLine === false || !S.token) return;
+  const today = localDate();
+  const paths = ['/stats?today=' + today, '/workouts?limit=4', '/workouts?limit=300', '/exercises', '/prs', `/insights?today=${today}`, '/bodyweight?limit=120', '/settings'];
+  try {
+    for (const p of paths) if (!cacheRead(p) || Date.now() - cacheRead(p).t > 60000) await refresh(p);
+    const recent = (cacheRead('/workouts?limit=300').data || []).slice(0, 12).map((w) => '/workouts/' + w.id);
+    const exs = (cacheRead('/exercises').data || []).filter((e) => e.last_used).sort((a, b) => b.last_used.localeCompare(a.last_used)).slice(0, 20).map((e) => '/exercises/' + e.id);
+    for (const p of [...recent, ...exs]) if (!cacheRead(p)) await refresh(p);
+  } catch {}
 }
 
 function toast(msg) {
@@ -529,14 +629,39 @@ document.addEventListener('scroll', hideTip, { capture: true, passive: true });
 const workoutCard = (w) => `<div class="card tap" data-a="openWorkout" data-id="${w.id}">
   <div class="row"><div class="grow title trunc">${esc(w.name)}</div><div class="muted small">${niceDate(w.date)}</div></div>
   <div class="muted small trunc">${esc(w.exercises || 'No sets yet')}</div>
-  <div class="muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit} volume</div></div>`;
+  <div class="muted small">${w.set_count} sets · ${big(w.volume)} ${S.unit} volume${w.unsynced ? ' · <b style="color:var(--gold)">not synced yet</b>' : ''}</div></div>`;
+// Workouts started offline that the server has not seen yet, summarised like the server's list.
+function unsyncedWorkouts() {
+  return store.get('gt_localw', []).filter((id) => rid(id) === id).map((id) => cacheRead('/workouts/' + id)).filter(Boolean).map(({ data: w }) => {
+    const cards = workoutCards(w), meta = workoutMeta(w), sets = cards.flatMap((c) => c.sets);
+    return { id: w.id, name: meta.name, date: meta.date, unsynced: true, exercises: cards.filter((c) => c.sets.length).map((c) => c.name).join(', '), set_count: sets.length,
+      volume: sets.reduce((v, x) => v + (x.is_warmup || isPlatesSet(x) ? 0 : x.weight * x.reps), 0) };
+  });
+}
+
+// ---------- install ----------
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; if (S.tab === 'more' && !S.view) softRender(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; toast('Installed'); softRender(); });
+const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function installCard() {
+  if (installed()) return '';
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const body = installPrompt ? '<button class="btn primary block" data-a="install">Install Gym Log</button>'
+    : ios ? '<div class="small">In Safari, tap <b>Share</b> then <b>Add to Home Screen</b>.</div>'
+    : '<div class="small">Use your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.</div>';
+  return `<h2>Install</h2><div class="card"><div class="muted small" style="margin-bottom:10px">Add Gym Log to your home screen. It opens full screen and works without signal; changes sync when you are back online.</div>${body}</div>`;
+}
 
 const views = {
   async home() {
-    const [stats, recent] = await Promise.all([get('/stats?today=' + localDate()), get('/workouts?limit=4')]);
+    let [stats, recent] = await Promise.all([get('/stats?today=' + localDate()), get('/workouts?limit=4')]);
     S.unit = stats.unit;
     const active = store.get('gt_active');
-    const activeW = active && recent.find((w) => w.id === active);
+    const gone = deletedWorkouts();
+    recent = [...unsyncedWorkouts(), ...recent.filter((w) => !gone.has(w.id))];
+    const activeC = active && cacheRead('/workouts/' + rid(active));
+    const activeW = active && (recent.find((w) => w.id === rid(active)) || (activeC && { id: active, name: workoutMeta(activeC.data).name }));
     return `<h1>Gym Log</h1>
       <div class="tiles">
         <div class="tile"><b>${stats.workouts_this_week}</b><span>this week</span></div>
@@ -553,7 +678,8 @@ const views = {
   },
 
   async history() {
-    const list = await get('/workouts?limit=300');
+    const gone = deletedWorkouts();
+    const list = [...unsyncedWorkouts(), ...(await get('/workouts?limit=300')).filter((w) => !gone.has(w.id))];
     let out = '<h1>History</h1>', month = '';
     for (const w of list) {
       const m = new Date(w.date + 'T12:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -694,7 +820,12 @@ const views = {
   },
 
   async more() {
-    const [stats, bw] = await Promise.all([get('/stats?today=' + localDate()), get('/bodyweight?limit=120')]);
+    let [stats, bw] = await Promise.all([get('/stats?today=' + localDate()), get('/bodyweight?limit=120')]);
+    // Show queued body weight changes straight away.
+    for (const op of outbox) {
+      if (op.kind === 'delBw') bw = bw.filter((b) => b.id !== op.bwId);
+      if (op.kind === 'bw') bw = [{ id: 0, ...op.body }, ...bw.filter((b) => b.date !== op.body.date)].sort((a, b) => b.date.localeCompare(a.date));
+    }
     S.unit = stats.unit;
     const max = Math.max(1, ...stats.weeks.map((w) => w.workouts));
     const pts = bw.slice().reverse().map((b) => ({ x: niceDate(b.date), y: b.weight }));
@@ -711,8 +842,9 @@ const views = {
       <div class="card">
         <div class="bwrow"><input id="bwv" type="number" inputmode="decimal" step="0.1" placeholder="${S.unit}" aria-label="Body weight"><input id="bwd" type="date" value="${localDate()}" aria-label="Date"><button class="btn primary" data-a="addBw">Save</button></div>
         <div style="margin-top:12px">${pts.length ? lineChart(pts, S.unit) : '<div class="muted small">No entries yet.</div>'}</div>
-        ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div><button class="btn ghost" data-a="delBw" data-id="${b.id}" aria-label="Delete entry">✕</button></div>`).join('')}
+        ${bw.slice(0, 5).map((b) => `<div class="row" style="border-top:1px solid var(--line);padding:8px 0 0;margin-top:8px"><div class="grow">${fmt(b.weight)} ${S.unit}</div><div class="muted small">${niceDate(b.date)}</div>${b.id ? `<button class="btn ghost" data-a="delBw" data-id="${b.id}" aria-label="Delete entry">✕</button>` : '<span class="muted small" style="padding:0 8px">syncing</span>'}</div>`).join('')}
       </div>
+      ${installCard()}
       <h2>Units</h2>
       <div class="card row"><div class="grow">Weight unit<div class="muted small">Changes the label only; numbers are not converted.</div></div>
         <select id="unit" style="width:90px">${opts(['kg', 'lb'], S.unit)}</select></div>
@@ -743,10 +875,9 @@ function exerciseList(q) {
 
 // ---------- workout screen ----------
 const pendingOf = (id) => store.get('gt_pending_' + id, []);
-const exById = (id) => S.exercises.find((e) => e.id === id);
 const isPlatesSet = (s) => /^plates\b/.test((s && s.notes) || '');
 
-// What is on screen = what the server has + sets still waiting in the queue + exercises added but not yet used.
+// What is on screen = the server's copy + queued changes (new, edited and deleted sets) + exercises added but not used yet.
 function workoutCards(w) {
   const cards = w.exercises.map((e) => ({ ...e, sets: e.sets.slice() }));
   const card = (id) => {
@@ -755,15 +886,30 @@ function workoutCards(w) {
     return c;
   };
   for (const op of outbox) {
-    if (op.wid !== w.id) continue;
-    for (const st of op.body.sets) card(op.body.exercise_id).sets.push({ id: op.id, weight: +st.weight, reps: +st.reps, is_warmup: st.warmup ? 1 : 0, notes: st.notes || '', saving: true });
+    if (rid(op.wid) !== w.id) continue;
+    if (op.kind === 'sets') {
+      for (const st of op.body.sets) card(rid(op.body.exercise_id)).sets.push({ id: op.id, weight: +st.weight, reps: +st.reps, is_warmup: st.warmup ? 1 : 0, notes: st.notes || '', saving: true });
+    }
+    if (op.kind === 'editSet' || op.kind === 'delSet') {
+      for (const c of cards) {
+        const i = c.sets.findIndex((x) => x.id === op.setId);
+        if (i < 0) continue;
+        if (op.kind === 'delSet') c.sets.splice(i, 1);
+        else { const b = op.body; c.sets[i] = { ...c.sets[i], weight: +b.weight, reps: +b.reps, rpe: b.rpe ? +b.rpe : null, is_warmup: b.warmup ? 1 : 0, notes: b.notes, is_pr: 0 }; }
+      }
+    }
   }
-  for (const pid of pendingOf(w.id)) if (exById(pid)) card(pid);
+  for (const pid of pendingOf(w.id)) { const x = rid(pid); if (exById(x)) card(x); }
   return cards;
+}
+function workoutMeta(w) {
+  const m = { name: w.name, notes: w.notes, date: w.date };
+  for (const op of outbox) if (op.kind === 'patchWorkout' && rid(op.wid) === w.id) Object.assign(m, op.body);
+  return m;
 }
 function setsHtml(c) {
   let n = 0;
-  return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'savingInfo' : 'editSet'}" data-id="${s.id}">
+  return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'pendingSet' : 'editSet'}" data-id="${s.id}">
     <div class="n">${s.is_warmup ? 'W' : ++n}</div>
     <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
     <div>${s.saving ? '<span class="muted small">saving…</span>' : s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('');
@@ -773,7 +919,12 @@ function totalsText(cards) {
   const vol = sets.reduce((v, s) => v + (s.is_warmup || isPlatesSet(s) ? 0 : s.weight * s.reps), 0);
   return `${sets.length} set${sets.length === 1 ? '' : 's'} · ${big(vol)} ${S.unit}`;
 }
-const prevOf = (w, id) => w.previous[id] || S.prevExtra[id] || null;
+// "Last time" for an exercise: from the workout itself, or else from the exercise library (works offline).
+function prevOf(w, id) {
+  if (w.previous[id]) return w.previous[id];
+  const e = exById(id);
+  return e && e.last && e.last.workout_id !== w.id ? e.last : null;
+}
 // Is this exercise logged as machine plates rather than weight? Follows the last set unless switched by hand.
 function usesPlates(w, c) {
   if (S.plates[c.exercise_id] != null) return S.plates[c.exercise_id];
@@ -783,7 +934,7 @@ function usesPlates(w, c) {
 // Update only the set lists and totals, leaving the inputs (and the keyboard) alone.
 function paintWorkout() {
   syncBadge();
-  if (!S.view || S.view.type !== 'workout' || !S.wk || S.wk.id !== S.view.id) return;
+  if (!S.view || S.view.type !== 'workout' || !S.wk || S.wk.id !== rid(S.view.id)) return;
   const cards = workoutCards(S.wk);
   for (const c of cards) {
     const box = $('#sets-' + c.exercise_id);
@@ -797,27 +948,19 @@ function paintWorkout() {
 }
 
 async function vWorkout(id) {
-  if (!S.exercises.length) S.exercises = await get('/exercises');
-  const w = await get('/workouts/' + id);
+  if (!S.exercises.length) S.exercises = await get('/exercises').catch(() => []);
+  const w = await get('/workouts/' + rid(id));
   S.wk = w;
-  // "Last time" for exercises that were added but have no sets yet.
-  for (const pid of pendingOf(id)) {
-    if (pid in S.prevExtra || w.previous[pid]) continue;
-    S.prevExtra[pid] = null;
-    get(`/exercises/${pid}?limit=2`).then((d) => {
-      const s = d.sessions.find((x) => x.workout_id !== id);
-      if (s) { S.prevExtra[pid] = { date: s.date, sets: s.sets }; softRender(); }
-    }).catch(() => {});
-  }
+  const meta = workoutMeta(w);
   const cards = workoutCards(w);
   const card = (c) => {
     const prev = prevOf(w, c.exercise_id);
     const lastSet = c.sets.at(-1) || (prev && (prev.sets.filter((s) => !s.is_warmup)[0] || prev.sets[0]));
-    const pl = usesPlates(w, c), x = c.exercise_id;
+    const pl = usesPlates(w, c), x = c.exercise_id, pr = (exById(x) || {}).pr;
     return `<div class="card" id="card-${x}">
-      <div class="row"><div class="grow title trunc" data-a="openExercise" data-id="${x}">${esc(c.name)}</div>
+      <div class="row"><div class="grow title trunc" ${x > 0 ? `data-a="openExercise" data-id="${x}"` : ''}>${esc(c.name)}</div>
         ${c.sets.length ? '' : `<button class="btn ghost" data-a="dropPending" data-id="${x}" aria-label="Remove exercise">✕</button>`}</div>
-      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}${(exById(x) || {}).pr ? `<br>PR: ${recText(exById(x).pr)} (${niceDate(exById(x).pr.date)})` : ''}</div>
+      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}${pr ? `<br>PR: ${recText(pr)} (${niceDate(pr.date)})` : ''}</div>
       <div id="sets-${x}">${setsHtml(c)}</div>
       <div class="logger">
         <div><div class="cap"><span id="ucap-${x}">Weight (${pl ? 'plates' : S.unit})</span><button data-a="toggleUnit" data-id="${x}" id="ubtn-${x}">use ${pl ? S.unit : 'plates'}</button></div>
@@ -833,11 +976,11 @@ async function vWorkout(id) {
         <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div>`;
   };
   return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
-      <input class="name" id="wname" value="${esc(w.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span></div>
-    <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${w.date}" style="width:auto;flex:0 0 auto" aria-label="Workout date"><div id="wtotals" class="grow right muted small">${totalsText(cards)}</div></div>
+      <input class="name" id="wname" value="${esc(meta.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span></div>
+    <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${meta.date}" style="width:auto;flex:0 0 auto" aria-label="Workout date"><div id="wtotals" class="grow right muted small">${totalsText(cards)}</div></div>
     ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
     <button class="btn block" data-a="pickExercise">+ Add exercise</button>
-    <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(w.notes)}</textarea>
+    <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(meta.notes)}</textarea>
     <button class="btn primary block" style="margin-top:14px" data-a="finish">Finish workout</button>
     <div class="grid2" style="margin-top:8px"><button class="btn" data-a="repeat">Repeat as new</button><button class="btn danger" data-a="delWorkout">Delete</button></div>`;
 }
@@ -880,6 +1023,7 @@ const scrolls = {};
 
 async function render(opt = {}) {
   const seq = ++renderSeq;
+  S.used = new Set();
   CH = {}; chN = 0;
   const main = $('#main');
   $('#tabs').hidden = !S.token;
@@ -894,7 +1038,7 @@ async function render(opt = {}) {
   } catch (e) {
     if (!S.token) return render();
     if (S.view && e.status === 404) {
-      if (S.view.type === 'workout' && store.get('gt_active') === S.view.id) store.set('gt_active', null);
+      if (S.view.type === 'workout' && rid(store.get('gt_active')) === rid(S.view.id)) store.set('gt_active', null);
       S.view = null;
       history.replaceState({ tab: S.tab, view: null, depth: depth() }, '');
       return render();
@@ -939,7 +1083,7 @@ window.addEventListener('popstate', (e) => {
   if (st.modal) return history.back(); // a dialog cannot be re-opened by going forward
   if (st.tab === S.tab && JSON.stringify(st.view) === JSON.stringify(S.view)) { if (S.deferred) softRender(); return; }
   scrolls[routeKey()] = window.scrollY;
-  S.tab = st.tab; S.view = st.view;
+  S.tab = st.tab; S.view = st.view && { ...st.view, id: rid(st.view.id) };
   render({ scroll: scrolls[routeKey()] || 0 });
 });
 
@@ -965,32 +1109,42 @@ const A = {
   range(el) { S.range = el.dataset.r; render({ soft: true }); },
   exMetric(el) { S.exMetric = el.dataset.m; render({ soft: true }); },
 
+  // Workouts are created on the phone first, so starting one never waits for the network.
+  startWorkout(name, pending) {
+    const id = tempId(), date = localDate();
+    cacheWrite('/workouts/' + id, { id, date, name, notes: '', set_count: 0, volume: 0, exercises: [], previous: {} });
+    store.set('gt_localw', [...store.get('gt_localw', []), id]);
+    if (pending) store.set('gt_pending_' + id, pending);
+    store.set('gt_active', id);
+    queue({ kind: 'newWorkout', wid: id, body: { date, name } });
+    return id;
+  },
   async newWorkout() {
     const h = new Date().getHours();
-    const w = await api('/workouts', 'POST', { date: localDate(), name: (h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout' });
-    mergeWorkout(w);
-    store.set('gt_active', w.id);
-    await go({ type: 'workout', id: w.id });
+    const id = A.startWorkout((h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout');
+    await go({ type: 'workout', id });
     A.pickExercise();
   },
   finish() {
     const w = S.wk;
     const cards = workoutCards(w);
-    const prs = w.exercises.flatMap((e) => e.sets).filter((s) => s.is_pr).length;
+    const prs = cards.flatMap((c) => c.sets).filter((s) => s.is_pr).length;
     store.set('gt_active', null);
     store.set('gt_pending_' + w.id, null);
     S.restAt = 0; store.set('gt_rest', null);
     touchAll();
     goBack();
-    toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}`);
+    toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}${outbox.length ? ' · will sync when online' : ''}`);
   },
-  async delWorkout() {
+  delWorkout() {
     if (!confirm('Delete this workout and all its sets?')) return;
     const id = S.wk.id;
-    await api('/workouts/' + id, 'DELETE');
-    outbox = outbox.filter((op) => op.wid !== id); saveOutbox();
+    outbox = outbox.filter((op) => rid(op.wid) !== id || op.id === sendingId); saveOutbox();
+    // A workout that never reached the server only needs forgetting, unless it is being sent right now.
+    if (id > 0 || outbox.some((op) => op.wid === id)) queue({ kind: 'delWorkout', wid: id });
     if (store.get('gt_active') === id) store.set('gt_active', null);
     store.set('gt_pending_' + id, null);
+    store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== id));
     mem.delete('/workouts/' + id); store.set('gc:/workouts/' + id, null);
     touchAll();
     goBack();
@@ -998,16 +1152,13 @@ const A = {
   },
   async repeat() {
     const src = S.wk;
-    const w = await api('/workouts', 'POST', { date: localDate(), name: src.name });
-    mergeWorkout(w);
-    store.set('gt_pending_' + w.id, src.exercises.map((e) => e.exercise_id));
-    store.set('gt_active', w.id);
-    await setRoute(S.tab, { type: 'workout', id: w.id }, false);
+    const id = A.startWorkout(workoutMeta(src).name, workoutCards(src).map((c) => c.exercise_id));
+    await setRoute(S.tab, { type: 'workout', id }, false);
     toast('New workout with the same exercises');
   },
 
   async pickExercise() {
-    S.exercises = await get('/exercises');
+    S.exercises = await get('/exercises').catch(() => S.exercises);
     // Refresh in the background so "last" and PR reflect sets logged just now.
     refresh('/exercises').then((d) => { S.exercises = d; if (modalOpen() && $('#plist')) fillPicker($('#pq').value); }).catch(() => {});
     modal('Add exercise', `<div class="stick"><input id="pq" type="search" placeholder="Search or type a new name" autocomplete="off" enterkeyhint="search"></div><div id="plist"></div>`);
@@ -1017,10 +1168,9 @@ const A = {
   async choose(el) {
     let id = +el.dataset.id;
     if (!id) {
-      const ex = await api('/exercises', 'POST', { name: el.dataset.name });
-      S.exercises.push({ ...ex, set_count: 0, last_used: null });
-      touchAll();
-      id = ex.id;
+      // Created on the server together with its first set, so this works offline too.
+      id = tempId();
+      store.set('gt_localex', [...localEx(), { id, name: el.dataset.name, muscle_group: 'Other', equipment: 'Other', last: null, pr: null }]);
     }
     const wid = S.view.id, p = pendingOf(wid);
     if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
@@ -1053,20 +1203,23 @@ const A = {
     const weight = +$('#w-' + id).value || 0, reps = Math.round(+$('#r-' + id).value || 0);
     if (reps <= 0) { toast('Enter reps'); return; }
     const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
-    outbox.push({
-      id: 't' + Date.now() + Math.random().toString(36).slice(2, 6), wid, method: 'POST', path: `/workouts/${wid}/sets`,
-      body: { exercise_id: id, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '' }] },
-    });
-    saveOutbox();
+    queue({ kind: 'sets', wid, exName: (exById(id) || {}).name, body: { exercise_id: id, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '' }] } });
     if (S.warm[id]) { S.warm[id] = false; const b = $(`[data-a="warm"][data-id="${id}"]`); if (b) b.classList.remove('on'); }
     S.restAt = Date.now(); store.set('gt_rest', S.restAt);
     if (navigator.vibrate) navigator.vibrate(12);
     paintWorkout();
-    pump();
   },
-  savingInfo() { toast(syncFailing ? 'Waiting for a connection to save this set' : 'Saving this set…'); },
+  // A set that has not reached the server yet can only be removed.
+  pendingSet(el) {
+    const op = outbox.find((o) => o.id === el.dataset.id);
+    if (!op) return;
+    if (op.id === sendingId) return toast('Saving this set right now…');
+    if (!confirm(`${syncFailing || navigator.onLine === false ? 'This set is waiting for a connection.' : 'This set is still saving.'}\nRemove it?`)) return;
+    outbox = outbox.filter((o) => o.id !== op.id); saveOutbox();
+    paintWorkout();
+  },
   editSet(el) {
-    const s = S.wk.exercises.flatMap((e) => e.sets).find((x) => x.id === +el.dataset.id);
+    const s = workoutCards(S.wk).flatMap((c) => c.sets).find((x) => x.id === +el.dataset.id);
     if (!s) return;
     modal('Edit set', `<div class="grid2"><div><label for="es-w">Weight (${unitOf(s)})</label><input id="es-w" type="number" inputmode="decimal" step="any" value="${fmt(s.weight)}"></div>
       <div><label for="es-r">Reps</label><input id="es-r" type="number" inputmode="numeric" value="${s.reps}"></div></div>
@@ -1076,16 +1229,19 @@ const A = {
       <div class="grid2" style="margin-top:16px"><button class="btn danger" data-a="delSet" data-id="${s.id}">Delete set</button><button class="btn primary" data-a="saveSet" data-id="${s.id}">Save</button></div>`);
   },
   async saveSet(el) {
-    const w = await api('/sets/' + el.dataset.id, 'PATCH', { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value });
-    mergeWorkout(w);
+    const setId = +el.dataset.id;
+    const body = { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value };
+    outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
+    queue({ kind: 'editSet', wid: S.wk.id, setId, body });
     await closeModal();
     paintWorkout();
   },
   async delSet(el) {
-    const w = await api('/sets/' + el.dataset.id, 'DELETE');
-    mergeWorkout(w);
+    const setId = +el.dataset.id;
+    outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
+    queue({ kind: 'delSet', wid: S.wk.id, setId });
     await closeModal();
-    render({ soft: true });
+    paintWorkout();
   },
 
   editExercise(el) {
@@ -1113,16 +1269,18 @@ const A = {
     goBack();
   },
   closeModal() { return closeModal(); },
+  async install() { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; softRender(); },
 
-  async addBw() {
+  addBw() {
     const v = $('#bwv').value;
     if (!v) return toast('Enter a weight');
-    await api('/bodyweight', 'POST', { weight: v, date: $('#bwd').value });
+    queue({ kind: 'bw', body: { weight: +v, date: $('#bwd').value || localDate() } });
     $('#bwv').value = '';
     $('#bwv').blur();
-    touchAll(); render({ soft: true }); toast('Body weight saved');
+    render({ soft: true });
+    toast('Body weight saved');
   },
-  async delBw(el) { await api('/bodyweight/' + el.dataset.id, 'DELETE'); touchAll(); render({ soft: true }); },
+  delBw(el) { queue({ kind: 'delBw', bwId: +el.dataset.id }); render({ soft: true }); },
   async copyMcp(el) {
     const url = location.origin + '/mcp' + (el.dataset.k === '1' ? '/' + encodeURIComponent(S.token) : '');
     try { await navigator.clipboard.writeText(url); toast('Copied'); } catch { prompt('Copy this URL', url); }
@@ -1132,9 +1290,9 @@ const A = {
 function fillPicker(q) {
   const t = q.trim().toLowerCase();
   const inWorkout = new Set(workoutCards(S.wk).map((c) => c.exercise_id));
-  const list = S.exercises.filter((e) => !t || e.name.toLowerCase().includes(t) || e.muscle_group.toLowerCase().includes(t))
+  const list = [...localEx(), ...S.exercises].filter((e) => !t || e.name.toLowerCase().includes(t) || e.muscle_group.toLowerCase().includes(t))
     .sort((a, b) => (b.last_used || '').localeCompare(a.last_used || '') || a.name.localeCompare(b.name));
-  const exact = S.exercises.some((e) => e.name.toLowerCase() === t);
+  const exact = [...localEx(), ...S.exercises].some((e) => e.name.toLowerCase() === t);
   $('#plist').innerHTML = (t && !exact ? `<div class="pick" data-a="choose" data-name="${esc(q.trim())}" style="color:var(--accent)">+ Create “${esc(q.trim())}”</div>` : '') +
     list.map((e) => `<div class="pick ex" data-a="choose" data-id="${e.id}">
       <div class="prow"><div class="pname">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="badge w">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>
@@ -1161,9 +1319,8 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('change', async (ev) => {
   const t = ev.target;
   try {
-    if (t.id === 'wname') mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { name: t.value }));
-    if (t.id === 'wnotes') mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { notes: t.value }));
-    if (t.id === 'wdate' && t.value) mergeWorkout(await api('/workouts/' + S.view.id, 'PATCH', { date: t.value }));
+    const field = { wname: 'name', wnotes: 'notes', wdate: 'date' }[t.id];
+    if (field && (t.value || field === 'notes')) queue({ kind: 'patchWorkout', wid: S.view.id, body: { [field]: t.value } });
     if (t.id === 'theme') applyTheme(t.value);
     if (t.id === 'unit') { await api('/settings', 'PUT', { unit: t.value }); S.unit = t.value; store.set('gt_unit', t.value); touchAll(); render({ soft: true }); }
   } catch (e) { toast(e.message); }
@@ -1215,13 +1372,17 @@ setInterval(() => {
 (function start() {
   pruneCache();
   history.replaceState({ tab: 'home', view: null, depth: 0 }, '');
-  const active = store.get('gt_active');
+  const active = rid(store.get('gt_active'));
+  if (active !== store.get('gt_active')) store.set('gt_active', active);
+  if (!outbox.length && Object.keys(idmap).length > 50) { idmap = {}; store.set('gt_idmap', {}); }
   if (S.token && active) {
     S.view = { type: 'workout', id: active };
     history.pushState({ tab: 'home', view: S.view, depth: 1 }, '');
   }
   render();
   pump();
+  setTimeout(prefetch, 2500);
+  window.addEventListener('online', () => setTimeout(prefetch, 1000));
   if (S.token) get('/settings').then((st) => { if (st.unit && st.unit !== S.unit) { S.unit = st.unit; store.set('gt_unit', st.unit); softRender(); } }).catch(() => {});
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
