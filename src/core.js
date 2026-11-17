@@ -52,6 +52,33 @@ export async function listExercises(db, { search } = {}) {
     )
     .bind(q, q, q)
     .all();
+  // Per exercise: the best set ever (by estimated 1RM, or most reps for bodyweight work) and the last session's sets.
+  const { results: sets } = await db
+    .prepare(
+      `SELECT s.exercise_id, s.workout_id, s.weight, s.reps, s.is_warmup, s.notes, w.date
+       FROM sets s JOIN workouts w ON w.id=s.workout_id ORDER BY w.date, w.id, s.id`
+    )
+    .all();
+  const by = new Map();
+  for (const s of sets) {
+    if (!by.has(s.exercise_id)) by.set(s.exercise_id, []);
+    by.get(s.exercise_id).push(s);
+  }
+  for (const e of results) {
+    const list = by.get(e.id);
+    e.pr = null;
+    e.last = null;
+    if (!list) continue;
+    const rec = recordsFor(list);
+    const best = rec.best_e1rm || rec.most_reps;
+    if (best) e.pr = { weight: best.weight, reps: best.reps, date: best.date, unit: best.unit };
+    const lastId = list.at(-1).workout_id;
+    const lastSets = list.filter((s) => s.workout_id === lastId);
+    e.last = {
+      date: list.at(-1).date,
+      sets: lastSets.map((s) => ({ weight: s.weight, reps: s.reps, is_warmup: s.is_warmup, notes: s.notes })),
+    };
+  }
   return results;
 }
 

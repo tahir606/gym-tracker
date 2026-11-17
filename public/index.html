@@ -153,6 +153,13 @@ body.locked{overflow:hidden}
 .logrow .btn{min-height:54px;font-size:17px}
 .bwrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px}
 #sync{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));z-index:30;background:var(--gold);color:#2b1f00;font-size:12px;font-weight:700;padding:6px 12px;border-radius:99px;white-space:nowrap}
+.pick.ex{display:block;padding:12px 4px}
+.prow{display:flex;align-items:baseline;gap:10px}
+.pname{flex:1;min-width:0;font-weight:600}
+.pmeta{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.45}
+.pmeta b{color:var(--text);font-weight:650}
+.pk{display:inline-block;min-width:34px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.pmeta .pk:empty{min-width:34px}
 </style>
 </head>
 <body>
@@ -374,6 +381,20 @@ const noteOf = (s) => (s.notes || '').replace(/^plates(\s*·\s*)?/, '');
 const setText = (s) => (s.weight > 0 ? `${fmt(s.weight)} ${unitOf(s)}${s.reps ? ` × ${s.reps}` : ''}` : `${s.reps} reps`);
 const shortSet = (s) => (s.weight > 0 ? `${fmt(s.weight)}${unitOf(s) === 'plates' ? ' pl' : ''}${s.reps ? `×${s.reps}` : ''}` : `${s.reps}`);
 const recText = (r) => `${fmt(r.weight)} ${r.unit || S.unit}${r.reps ? ` × ${r.reps}` : ''}`;
+// "3 days ago" style age of a YYYY-MM-DD date.
+function ago(d) {
+  const days = Math.round((new Date(localDate() + 'T00:00') - new Date(d + 'T00:00')) / 864e5);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+  return `${Math.round(days / 30)} months ago`;
+}
+// Working sets of a session in short form, e.g. "40×8, 45×6"; falls back to warm-ups if that's all there was.
+const lastLevel = (sets) => {
+  const work = sets.filter((x) => !x.is_warmup);
+  return (work.length ? work : sets).map(shortSet).join(', ') + (work.length ? '' : ' (warm-up)');
+};
 const opts = (list, sel) => list.map((o) => `<option${o === sel ? ' selected' : ''}>${esc(o)}</option>`).join('');
 
 // ---------- charts ----------
@@ -796,7 +817,7 @@ async function vWorkout(id) {
     return `<div class="card" id="card-${x}">
       <div class="row"><div class="grow title trunc" data-a="openExercise" data-id="${x}">${esc(c.name)}</div>
         ${c.sets.length ? '' : `<button class="btn ghost" data-a="dropPending" data-id="${x}" aria-label="Remove exercise">✕</button>`}</div>
-      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}</div>
+      <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}${(exById(x) || {}).pr ? `<br>PR: ${recText(exById(x).pr)} (${niceDate(exById(x).pr.date)})` : ''}</div>
       <div id="sets-${x}">${setsHtml(c)}</div>
       <div class="logger">
         <div><div class="cap"><span id="ucap-${x}">Weight (${pl ? 'plates' : S.unit})</span><button data-a="toggleUnit" data-id="${x}" id="ubtn-${x}">use ${pl ? S.unit : 'plates'}</button></div>
@@ -986,7 +1007,9 @@ const A = {
   },
 
   async pickExercise() {
-    if (!S.exercises.length) S.exercises = await get('/exercises');
+    S.exercises = await get('/exercises');
+    // Refresh in the background so "last" and PR reflect sets logged just now.
+    refresh('/exercises').then((d) => { S.exercises = d; if (modalOpen() && $('#plist')) fillPicker($('#pq').value); }).catch(() => {});
     modal('Add exercise', `<div class="stick"><input id="pq" type="search" placeholder="Search or type a new name" autocomplete="off" enterkeyhint="search"></div><div id="plist"></div>`);
     fillPicker('');
     if (matchMedia('(pointer:fine)').matches) $('#pq').focus();
@@ -1113,7 +1136,10 @@ function fillPicker(q) {
     .sort((a, b) => (b.last_used || '').localeCompare(a.last_used || '') || a.name.localeCompare(b.name));
   const exact = S.exercises.some((e) => e.name.toLowerCase() === t);
   $('#plist').innerHTML = (t && !exact ? `<div class="pick" data-a="choose" data-name="${esc(q.trim())}" style="color:var(--accent)">+ Create “${esc(q.trim())}”</div>` : '') +
-    list.map((e) => `<div class="pick" data-a="choose" data-id="${e.id}"><div class="grow trunc" style="flex:1;min-width:0">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="muted small">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>`).join('');
+    list.map((e) => `<div class="pick ex" data-a="choose" data-id="${e.id}">
+      <div class="prow"><div class="pname">${esc(e.name)}${inWorkout.has(e.id) ? ' <span class="badge w">added</span>' : ''}</div><div class="muted small">${esc(e.muscle_group)}</div></div>
+      ${e.last ? `<div class="pmeta"><span class="pk">Last</span> ${niceDate(e.last.date)} · ${ago(e.last.date)}<br><span class="pk"></span> ${lastLevel(e.last.sets)}</div>` : '<div class="pmeta">Never logged</div>'}
+      ${e.pr ? `<div class="pmeta"><span class="pk">PR</span> <b>${recText(e.pr)}</b> · ${niceDate(e.pr.date)}</div>` : ''}</div>`).join('');
 }
 
 // ---------- events ----------
