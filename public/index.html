@@ -162,6 +162,10 @@ body.locked{overflow:hidden}
 .pmeta b{color:var(--text);font-weight:650}
 .pk{display:inline-block;min-width:34px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 .pmeta .pk:empty{min-width:34px}
+.steps{margin:0;padding-left:22px;line-height:1.6}
+.steps li{margin:4px 0}
+.ibanner{margin-bottom:14px;gap:8px}
+.ibanner .btn.primary{min-height:40px;padding:8px 16px}
 </style>
 </head>
 <body>
@@ -641,17 +645,32 @@ function unsyncedWorkouts() {
 
 // ---------- install ----------
 let installPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; if (S.tab === 'more' && !S.view) softRender(); });
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; if (!S.view) softRender(); });
 window.addEventListener('appinstalled', () => { installPrompt = null; toast('Installed'); softRender(); });
 const installed = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+// Step-by-step install instructions for the browser this is open in.
+function installSteps() {
+  const ua = navigator.userAgent;
+  const android = /Android/.test(ua);
+  const ios = !android && (/iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  if (ios && /CriOS/.test(ua)) return ['Tap the <b>Share</b> icon (⬆) at the right of the address bar.', 'Scroll down and tap <b>Add to Home Screen</b>.', 'Tap <b>Add</b>.'];
+  if (ios && /FxiOS/.test(ua)) return ['Tap the <b>☰ menu</b>, then <b>Share</b>.', 'Tap <b>Add to Home Screen</b>, then <b>Add</b>.'];
+  if (ios) return ['Tap the <b>Share</b> icon (⬆) in Safari’s toolbar.', 'Scroll down and tap <b>Add to Home Screen</b>.', 'Tap <b>Add</b>.'];
+  if (/SamsungBrowser/.test(ua)) return ['Tap the <b>☰ menu</b> at the bottom right.', 'Tap <b>Add page to</b>, then <b>Home screen</b>.'];
+  if (android) return ['Tap the <b>⋮ menu</b> at the top right of Chrome.', 'Tap <b>Add to Home screen</b> (or <b>Install app</b>).', 'Choose <b>Install</b> and confirm.'];
+  return ['Open your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.'];
+}
+function installBody() {
+  return installPrompt ? '<button class="btn primary block" data-a="install">Install Gym Log</button>'
+    : `<ol class="steps">${installSteps().map((x) => `<li>${x}</li>`).join('')}</ol>`;
+}
 function installCard() {
   if (installed()) return '';
-  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const body = installPrompt ? '<button class="btn primary block" data-a="install">Install Gym Log</button>'
-    : ios ? '<div class="small">In Safari, tap <b>Share</b> then <b>Add to Home Screen</b>.</div>'
-    : '<div class="small">Use your browser menu and choose <b>Install app</b> or <b>Add to Home screen</b>.</div>';
-  return `<h2>Install</h2><div class="card"><div class="muted small" style="margin-bottom:10px">Add Gym Log to your home screen. It opens full screen and works without signal; changes sync when you are back online.</div>${body}</div>`;
+  return `<h2>Install</h2><div class="card"><div class="muted small" style="margin-bottom:10px">Add Gym Log to your home screen. It opens full screen and works without signal; changes sync when you are back online.</div>${installBody()}</div>`;
 }
+// A one-line reminder on the Log tab until the app is installed or the reminder is dismissed.
+const installBanner = () => (installed() || store.get('gt_noinstall') ? '' : `<div class="card row ibanner"><div class="grow small"><b>Install Gym Log</b><div class="muted">Home-screen app that works without signal.</div></div>
+  <button class="btn primary" data-a="${installPrompt ? 'install' : 'howInstall'}">${installPrompt ? 'Install' : 'How'}</button><button class="btn ghost" data-a="noInstall" aria-label="Dismiss">✕</button></div>`);
 
 const views = {
   async home() {
@@ -662,7 +681,7 @@ const views = {
     recent = [...unsyncedWorkouts(), ...recent.filter((w) => !gone.has(w.id))];
     const activeC = active && cacheRead('/workouts/' + rid(active));
     const activeW = active && (recent.find((w) => w.id === rid(active)) || (activeC && { id: active, name: workoutMeta(activeC.data).name }));
-    return `<h1>Gym Log</h1>
+    return `<h1>Gym Log</h1>${installBanner()}
       <div class="tiles">
         <div class="tile"><b>${stats.workouts_this_week}</b><span>this week</span></div>
         <div class="tile"><b>${stats.week_streak}</b><span>week streak</span></div>
@@ -1269,6 +1288,8 @@ const A = {
     goBack();
   },
   closeModal() { return closeModal(); },
+  howInstall() { modal('Install Gym Log', `<div class="muted small" style="margin-bottom:6px">It opens full screen like a normal app and works without signal.</div>${installBody()}`); },
+  noInstall() { store.set('gt_noinstall', 1); render({ soft: true }); },
   async install() { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; softRender(); },
 
   addBw() {
