@@ -142,8 +142,12 @@ body.locked{overflow:hidden}
 #sheet{flex:1;min-height:0;max-height:none;border:0;border-radius:0;background:none;margin:0 auto;padding:14px 16px calc(24px + env(safe-area-inset-bottom));-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .stick{position:sticky;top:-14px;background:var(--bg);padding:14px 0 8px;margin-top:-14px;z-index:1}
 .whdr{position:sticky;top:0;z-index:4;background:var(--bg);margin:calc(-14px - env(safe-area-inset-top)) -16px 10px;padding:calc(6px + env(safe-area-inset-top)) 12px 6px 6px;display:flex;align-items:center;gap:4px;border-bottom:1px solid var(--line)}
-.whdr input.name{flex:1;font-size:19px;font-weight:700;background:none;border-color:transparent;padding:6px 4px;min-width:0}
-.whdr input.name:focus{border-color:var(--line)}
+.whdr .name{flex:1;font-size:19px;font-weight:700;background:none;border:0;color:var(--text);padding:6px 4px;min-width:0;text-align:left;cursor:pointer}
+.whdr .name::after{content:' ▾';font-size:13px;color:var(--muted);font-weight:400}
+.nrow{min-height:52px;display:flex;align-items:center}
+.nrow .grow{flex:1;min-width:0}
+.nrow .btn.ghost{color:var(--muted)}
+.nrow.on{color:var(--accent);font-weight:650}
 .logger{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .cap{font-size:12px;color:var(--muted);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;min-height:28px}
 .cap button{background:none;border:0;color:var(--accent);font-size:12px;font-weight:600;padding:4px 0 4px 8px}
@@ -361,6 +365,7 @@ function opRequest(op) {
     case 'delSet': return ['/sets/' + op.setId, 'DELETE'];
     case 'bw': return ['/bodyweight', 'POST', op.body];
     case 'delBw': return ['/bodyweight/' + op.bwId, 'DELETE'];
+    case 'settings': return ['/settings', 'PUT', op.body];
   }
 }
 function synced(op, res) {
@@ -377,6 +382,7 @@ function synced(op, res) {
   }
   if (op.kind === 'delWorkout') { mem.delete('/workouts/' + rid(op.wid)); store.set('gc:/workouts/' + rid(op.wid), null); }
   if (op.kind === 'bw' || op.kind === 'delBw' || op.kind === 'delWorkout') { touchAll(); softRender(); }
+  if (op.kind === 'settings') cacheWrite('/settings', res);
 }
 async function pump() {
   if (pumping || !S.token) return;
@@ -696,6 +702,37 @@ function unsyncedWorkouts() {
     return { id: w.id, name: meta.name, date: meta.date, unsynced: true, exercises: cards.filter((c) => c.sets.length).map((c) => c.name).join(', '), set_count: sets.length,
       volume: sets.reduce((v, x) => v + (x.is_warmup || isPlatesSet(x) ? 0 : x.weight * x.reps), 0) };
   });
+}
+
+// ---------- workout names ----------
+// The user's saved list of names. Until they change it, it is suggested from names already used in history.
+const AUTO_NAME = /^((morning|afternoon|evening) )?workout$/i;
+function workoutNames() {
+  const queued = outbox.filter((o) => o.kind === 'settings' && o.body.workout_names).at(-1);
+  if (queued) return queued.body.workout_names;
+  const st = cacheRead('/settings');
+  if (st && Array.isArray(st.data.workout_names)) return st.data.workout_names;
+  const hist = (cacheRead('/workouts?limit=300') || { data: [] }).data;
+  const count = {};
+  for (const w of hist) if (!AUTO_NAME.test(w.name)) count[w.name] = (count[w.name] || 0) + 1;
+  return Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n]) => n);
+}
+function saveNames(names) {
+  outbox = outbox.filter((o) => !(o.kind === 'settings' && o.id !== sendingId));
+  queue({ kind: 'settings', body: { workout_names: names } });
+}
+// Picker shown when starting a workout (mode "new") or renaming one (mode "rename").
+function namePicker(mode) {
+  const names = workoutNames();
+  const current = mode === 'rename' ? workoutMeta(S.wk).name : '';
+  modal(mode === 'new' ? 'Name this workout' : 'Rename workout', `
+    <div class="stick"><div class="row" style="gap:8px"><input id="nq" placeholder="Type a new name" autocomplete="off" enterkeyhint="done" value="${esc(current && !names.includes(current) ? current : '')}">
+      <button class="btn primary" data-a="useName" data-mode="${mode}">Use</button></div>
+      <div class="muted small" style="margin-top:6px">New names are added to your list.</div></div>
+    <div id="nlist">${names.map((n) => `<div class="pick nrow${n === current ? ' on' : ''}" data-a="useName" data-mode="${mode}" data-name="${esc(n)}">
+      <div class="grow trunc">${esc(n)}</div><button class="btn ghost" data-a="dropName" data-name="${esc(n)}" data-mode="${mode}" aria-label="Remove ${esc(n)} from the list">✕</button></div>`).join('') ||
+      '<div class="empty">No saved names yet. Type one above, e.g. “Push day”.</div>'}</div>
+    ${mode === 'new' ? '<button class="btn block" style="margin-top:14px" data-a="useName" data-mode="new" data-skip="1">Skip for now</button>' : ''}`);
 }
 
 // ---------- install ----------
@@ -1097,7 +1134,7 @@ async function vWorkout(id) {
         <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div></div>`;
   };
   return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
-      <input class="name" id="wname" value="${esc(meta.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span>
+      <button class="name trunc" id="wname" data-a="nameWorkout" aria-label="Workout name: ${esc(meta.name)}. Tap to change">${esc(meta.name)}</button><span id="rest"></span>
       <button class="btn ghost more" data-a="workoutScreenMenu" aria-label="Workout options">⋯</button></div>
     <div class="row" style="margin-bottom:12px"><input id="wdate" type="date" value="${meta.date}" style="width:auto;flex:0 0 auto" aria-label="Workout date"><div id="wtotals" class="grow right muted small">${totalsText(cards)}</div></div>
     ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
@@ -1241,11 +1278,32 @@ const A = {
     queue({ kind: 'newWorkout', wid: id, body: { date, name, started_at: nowIso() } });
     return id;
   },
-  async newWorkout() {
-    const h = new Date().getHours();
-    const id = A.startWorkout((h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout');
+  newWorkout() { namePicker('new'); },
+  nameWorkout() { namePicker('rename'); },
+  async useName(el) {
+    const mode = el.dataset.mode;
+    let name = el.dataset.name || (el.dataset.skip ? '' : $('#nq').value.trim());
+    if (!name && !el.dataset.skip) { toast('Type a name or pick one from the list'); return $('#nq').focus(); }
+    if (el.dataset.skip) { const h = new Date().getHours(); name = (h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening') + ' workout'; }
+    else {
+      // Most recently used first, so the usual choices stay at the top.
+      const names = workoutNames();
+      const next = [name, ...names.filter((n) => n !== name)];
+      if (next.join('\n') !== names.join('\n')) saveNames(next);
+    }
+    await closeModal();
+    if (mode === 'rename') {
+      queue({ kind: 'patchWorkout', wid: S.view.id, body: { name } });
+      $('#wname').textContent = name;
+      return;
+    }
+    const id = A.startWorkout(name);
     await go({ type: 'workout', id });
     A.pickExercise();
+  },
+  dropName(el) {
+    saveNames(workoutNames().filter((n) => n !== el.dataset.name));
+    namePicker(el.dataset.mode);
   },
   finish() {
     const w = S.wk;
@@ -1259,7 +1317,7 @@ const A = {
     S.restAt = 0; store.set('gt_rest', null);
     touchAll();
     goBack();
-    toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}${outbox.length ? ' · will sync when online' : ''}`);
+    toast(`Saved · ${totalsText(cards).split(' · ')[0]}${prs ? ` · ${prs} PR${prs > 1 ? 's' : ''} 🏆` : ''}${outbox.length && (syncFailing || navigator.onLine === false) ? ' · will sync when online' : ''}`);
   },
 
   async pickExercise() {
@@ -1398,7 +1456,7 @@ const A = {
     const id = S.wk.id;
     menu(workoutMeta(S.wk).name, [
       ['Add exercise', 'pickExercise'],
-      ['Rename', 'focusName'],
+      ['Rename', 'nameWorkout'],
       ['Change date', 'pickDate'],
       ['Share or copy as text', 'shareWorkout', { id }],
       ['Repeat as a new workout', 'repeatWorkout', { id }],
@@ -1455,7 +1513,6 @@ const A = {
   },
 
   // ---------- what the menu items do ----------
-  focusName() { const n = $('#wname'); n.focus(); n.select(); },
   pickDate() { const d = $('#wdate'); try { d.showPicker(); } catch { d.focus(); d.click(); } },
   async shareWorkout(el) {
     const id = +el.dataset.id;
@@ -1597,7 +1654,7 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('change', async (ev) => {
   const t = ev.target;
   try {
-    const field = { wname: 'name', wnotes: 'notes', wdate: 'date' }[t.id];
+    const field = { wnotes: 'notes', wdate: 'date' }[t.id];
     if (field && (t.value || field === 'notes')) queue({ kind: 'patchWorkout', wid: S.view.id, body: { [field]: t.value } });
     if (t.id === 'theme') applyTheme(t.value);
     if (t.id === 'unit') { await api('/settings', 'PUT', { unit: t.value }); S.unit = t.value; store.set('gt_unit', t.value); touchAll(); render({ soft: true }); }
@@ -1609,6 +1666,7 @@ document.addEventListener('keydown', (ev) => {
   const id = ev.target.id || '';
   if (/^w-\d+$/.test(id)) { ev.preventDefault(); $('#r-' + id.slice(2)).focus(); }
   else if (/^r-\d+$/.test(id)) { ev.preventDefault(); ev.target.blur(); $(`[data-a="addSet"][data-id="${id.slice(2)}"]`).click(); }
+  else if (id === 'nq') { ev.preventDefault(); $('[data-a="useName"]:not([data-name]):not([data-skip])').click(); }
   else if (ev.target.tagName === 'INPUT' && ev.target.id !== 'key') ev.target.blur();
 });
 // Hide the tab bar while typing so it never sits on top of the keyboard, and select-all on focus for quick overwrite.

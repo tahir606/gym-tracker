@@ -37,13 +37,21 @@ function cleanSet(s) {
 // ---------- settings ----------
 export async function getSettings(db) {
   const { results } = await db.prepare('SELECT key, value FROM settings').all();
-  return Object.fromEntries(results.map((r) => [r.key, r.value]));
+  const out = Object.fromEntries(results.map((r) => [r.key, r.value]));
+  if (out.workout_names !== undefined) out.workout_names = JSON.parse(out.workout_names);
+  return out;
 }
 
 export async function setSettings(db, patch) {
   if (patch.unit !== undefined) {
     if (!['kg', 'lb'].includes(patch.unit)) throw new AppError('unit must be "kg" or "lb"');
     await db.prepare(`INSERT INTO settings (key,value) VALUES ('unit',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(patch.unit).run();
+  }
+  // The user's own list of workout names to pick from (e.g. "Push day", "Legs").
+  if (patch.workout_names !== undefined) {
+    if (!Array.isArray(patch.workout_names)) throw new AppError('workout_names must be a list of names');
+    const names = [...new Set(patch.workout_names.map((n) => str(n)).filter(Boolean))].slice(0, 100);
+    await db.prepare(`INSERT INTO settings (key,value) VALUES ('workout_names',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).bind(JSON.stringify(names)).run();
   }
   return getSettings(db);
 }
