@@ -176,6 +176,15 @@ body.locked{overflow:hidden}
 .mitem{display:flex;align-items:center;width:100%;min-height:52px;padding:0 12px;background:none;border:0;border-radius:12px;color:var(--text);font:inherit;font-size:16px;text-align:left;cursor:pointer}
 .mitem:active{background:var(--card2)}
 .mitem.danger{color:var(--danger)}
+.ex.collapsed{padding-top:12px;padding-bottom:12px}
+.ex.collapsed .exbody{display:none}
+.exhead{cursor:pointer;-webkit-user-select:none;user-select:none}
+.exsum{display:none;margin-top:2px}
+.ex.collapsed .exsum{display:block}
+.chev{width:10px;height:10px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-135deg);margin:4px 6px 0;flex:0 0 auto;transition:transform .15s}
+.ex.nosets .chev{visibility:hidden}
+.ex.collapsed .chev{transform:rotate(45deg);margin-top:-4px}
+.ex:not(.collapsed) .exhead{margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -224,7 +233,7 @@ matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncTheme
 const GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Other'];
 const EQUIP = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other'];
 
-const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, used: new Set(), restAt: store.get('gt_rest', 0), deferred: false };
+const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, fold: {}, used: new Set(), restAt: store.get('gt_rest', 0), deferred: false };
 
 // ---------- network, cache and offline queue ----------
 async function api(path, method = 'GET', body) {
@@ -488,6 +497,7 @@ function workoutText(w) {
 }
 // Queue one or more sets for an exercise in the open workout.
 function logSets(id, sets) {
+  setCurrent(id);
   queue({ kind: 'sets', wid: S.view.id, exName: (exById(id) || {}).name, body: { exercise_id: id, sets } });
   S.restAt = Date.now(); store.set('gt_rest', S.restAt);
   paintWorkout();
@@ -984,6 +994,44 @@ function usesPlates(w, c) {
   const prev = prevOf(w, c.exercise_id);
   return isPlatesSet(c.sets.at(-1) || (prev && prev.sets.at(-1)));
 }
+// Finished exercises fold into one line. The exercise being worked on (the last one a set was logged to,
+// or the one just added) stays open, as does any exercise without sets; a tap on a header opens or folds it.
+// A past workout opens fully folded.
+const curKey = (w) => 'gt_cur_' + rid(w.id);
+function currentEx(w) {
+  const cur = store.get(curKey(w));
+  if (cur != null) return rid(cur);
+  if (rid(store.get('gt_active')) !== w.id) return null;
+  const withSets = workoutCards(w).filter((c) => c.sets.length);
+  return withSets.length ? withSets.at(-1).exercise_id : null;
+}
+function setCurrent(id) {
+  if (!S.wk || currentEx(S.wk) === id) return;
+  store.set(curKey(S.wk), id);
+  S.fold = {};
+}
+function isCollapsed(w, c) {
+  if (!c.sets.length) return false;
+  if (S.fold[c.exercise_id] != null) return S.fold[c.exercise_id];
+  return c.exercise_id !== currentEx(w);
+}
+function summaryOf(c) {
+  if (!c.sets.length) return 'No sets yet';
+  const work = c.sets.filter((s) => !s.is_warmup);
+  const n = `${c.sets.length} set${c.sets.length === 1 ? '' : 's'}`;
+  const pr = c.sets.some((s) => s.is_pr) ? ' · 🏆 PR' : '';
+  return `${n} · ${(work.length ? work : c.sets).map(shortSet).join(', ')}${pr}`;
+}
+function applyFolding(cards) {
+  for (const c of cards) {
+    const el = $('#card-' + c.exercise_id);
+    if (!el) continue;
+    el.classList.toggle('collapsed', isCollapsed(S.wk, c));
+    el.classList.toggle('nosets', !c.sets.length);
+    const sum = $('#sum-' + c.exercise_id);
+    if (sum) sum.textContent = summaryOf(c);
+  }
+}
 // Update only the set lists and totals, leaving the inputs (and the keyboard) alone.
 function paintWorkout() {
   syncBadge();
@@ -998,11 +1046,13 @@ function paintWorkout() {
   }
   const t = $('#wtotals');
   if (t) t.textContent = totalsText(cards);
+  applyFolding(cards);
 }
 
 async function vWorkout(id) {
   if (!S.exercises.length) S.exercises = await get('/exercises').catch(() => []);
   const w = await get('/workouts/' + rid(id));
+  if (!S.wk || S.wk.id !== w.id) S.fold = {};
   S.wk = w;
   const meta = workoutMeta(w);
   const cards = workoutCards(w);
@@ -1010,9 +1060,12 @@ async function vWorkout(id) {
     const prev = prevOf(w, c.exercise_id);
     const lastSet = c.sets.at(-1) || (prev && (prev.sets.filter((s) => !s.is_warmup)[0] || prev.sets[0]));
     const pl = usesPlates(w, c), x = c.exercise_id, pr = (exById(x) || {}).pr;
-    return `<div class="card" id="card-${x}">
-      <div class="row"><div class="grow title trunc" ${x > 0 ? `data-a="openExercise" data-id="${x}"` : ''}>${esc(c.name)}</div>
+    return `<div class="card ex${isCollapsed(w, c) ? ' collapsed' : ''}${c.sets.length ? '' : ' nosets'}" id="card-${x}">
+      <div class="row exhead" data-a="toggleCard" data-id="${x}"><div class="grow" style="min-width:0"><div class="title trunc">${esc(c.name)}</div>
+          <div class="exsum muted small trunc" id="sum-${x}">${summaryOf(c)}</div></div>
+        <span class="chev" aria-hidden="true"></span>
         <button class="btn ghost more" data-a="exCardMenu" data-id="${x}" aria-label="Options for ${esc(c.name)}">⋯</button></div>
+      <div class="exbody">
       <div class="muted small" style="margin-bottom:6px">${prev ? `Last (${niceDate(prev.date)}): ${prev.sets.filter((s) => !s.is_warmup).map(shortSet).join(', ') || 'warm-ups only'}` : 'First time logging this'}${pr ? `<br>PR: ${recText(pr)} (${niceDate(pr.date)})` : ''}</div>
       <div id="sets-${x}">${setsHtml(c)}</div>
       <div class="logger">
@@ -1026,7 +1079,7 @@ async function vWorkout(id) {
             <button data-a="step" data-f="r" data-id="${x}" data-d="1" aria-label="More reps">+</button></div></div>
       </div>
       <div class="logrow"><button class="btn toggle ${S.warm[x] ? 'on' : ''}" data-a="warm" data-id="${x}">Warm-up</button>
-        <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div>`;
+        <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div></div>`;
   };
   return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
       <input class="name" id="wname" value="${esc(meta.name)}" aria-label="Workout name" enterkeyhint="done"><span id="rest"></span>
@@ -1208,6 +1261,7 @@ const A = {
     }
     const wid = S.view.id, p = pendingOf(wid);
     if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+    setCurrent(id);
     await closeModal();
     await render({ soft: true });
     const card = $('#card-' + id);
@@ -1237,6 +1291,7 @@ const A = {
     const weight = +$('#w-' + id).value || 0, reps = Math.round(+$('#r-' + id).value || 0);
     if (reps <= 0) { toast('Enter reps'); return; }
     const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    setCurrent(id);
     queue({ kind: 'sets', wid, exName: (exById(id) || {}).name, body: { exercise_id: id, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '' }] } });
     if (S.warm[id]) { S.warm[id] = false; const b = $(`[data-a="warm"][data-id="${id}"]`); if (b) b.classList.remove('on'); }
     S.restAt = Date.now(); store.set('gt_rest', S.restAt);
@@ -1332,6 +1387,13 @@ const A = {
       ['Delete workout', 'deleteWorkout', { id }, { danger: true }],
     ]);
   },
+  toggleCard(el) {
+    const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.exercise_id === id);
+    if (!c || !c.sets.length) return;
+    S.fold[id] = !isCollapsed(S.wk, c);
+    applyFolding([c]);
+    if (!S.fold[id]) $('#card-' + id).scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  },
   exCardMenu(el) {
     const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.exercise_id === id);
     if (!c) return;
@@ -1340,6 +1402,7 @@ const A = {
       c.sets.length && ['Log the same as the last set', 'repeatSet', { id }],
       prev && ['Copy all sets from last time', 'copyLast', { id }],
       [pl ? `Switch to ${S.unit}` : 'Switch to machine plates', 'toggleUnit', { id }],
+      c.sets.length && [isCollapsed(S.wk, c) ? 'Expand' : 'Collapse', 'toggleCard', { id }],
       id > 0 && ['History & progress', 'openExercise', { id }],
       ['Remove from workout', 'removeExercise', { id }, { danger: true }],
     ]);
