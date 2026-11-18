@@ -1010,6 +1010,8 @@ function usesPlates(w, c) {
 // Finished exercises fold into one line. The exercise being worked on (the last one a set was logged to,
 // or the one just added) stays open, as does any exercise without sets; a tap on a header opens or folds it.
 // A past workout opens fully folded.
+// The workout being done right now (Finish applies only to this one); anything else is a past workout.
+const inProgress = (w) => rid(store.get('gt_active')) === w.id;
 const curKey = (w) => 'gt_cur_' + rid(w.id);
 function currentEx(w) {
   const cur = store.get(curKey(w));
@@ -1101,8 +1103,8 @@ async function vWorkout(id) {
     ${cards.map(card).join('') || '<div class="empty">Add your first exercise to start logging sets.</div>'}
     <button class="btn block" data-a="pickExercise">+ Add exercise</button>
     <label for="wnotes">Notes</label><textarea id="wnotes" placeholder="How did it go?">${esc(meta.notes)}</textarea>
-    <button class="btn primary block" style="margin-top:14px" data-a="finish">Finish workout</button>
-    <div class="grid2" style="margin-top:8px"><button class="btn" data-a="repeatWorkout" data-id="${w.id}">Repeat as new</button><button class="btn danger" data-a="deleteWorkout" data-id="${w.id}">Delete</button></div>`;
+    ${inProgress(w) ? '<button class="btn primary block" style="margin-top:14px" data-a="finish">Finish workout</button>' : ''}
+    <div class="grid2" style="margin-top:${inProgress(w) ? 8 : 14}px"><button class="btn" data-a="repeatWorkout" data-id="${w.id}">Repeat as new</button><button class="btn danger" data-a="deleteWorkout" data-id="${w.id}">Delete</button></div>`;
 }
 
 async function vExercise(id) {
@@ -1400,7 +1402,7 @@ const A = {
       ['Change date', 'pickDate'],
       ['Share or copy as text', 'shareWorkout', { id }],
       ['Repeat as a new workout', 'repeatWorkout', { id }],
-      ['Finish workout', 'finish'],
+      inProgress(S.wk) && ['Finish workout', 'finish'],
       ['Delete workout', 'deleteWorkout', { id }, { danger: true }],
     ]);
   },
