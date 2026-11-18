@@ -327,6 +327,15 @@ const rid = (id) => (id < 0 && idmap[id]) || id;
 let tempSeq = 0;
 const tempId = () => -(Date.now() * 10 + (tempSeq++ % 10));
 const opId = () => 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const nowIso = () => new Date().toISOString();
+// When each exercise was added to a workout, kept on the phone until its first set is sent.
+const addedKey = (wid) => 'gt_added_' + wid;
+function addPending(wid, id) {
+  const p = pendingOf(wid);
+  if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+  const a = store.get(addedKey(wid), {});
+  if (!a[id]) store.set(addedKey(wid), { ...a, [id]: nowIso() });
+}
 function queue(op) {
   outbox.push({ id: opId(), ...op });
   saveOutbox();
@@ -343,7 +352,7 @@ function opRequest(op) {
     case 'newWorkout': return ['/workouts', 'POST', op.body];
     case 'sets': {
       const ex = rid(op.body.exercise_id);
-      const body = { sets: op.body.sets, ...(ex > 0 ? { exercise_id: ex } : { exercise: op.exName }) };
+      const body = { sets: op.body.sets, exercise_added_at: op.body.exercise_added_at, ...(ex > 0 ? { exercise_id: ex } : { exercise: op.exName }) };
       return [`/workouts/${wid}/sets`, 'POST', body];
     }
     case 'patchWorkout': return ['/workouts/' + wid, 'PATCH', op.body];
@@ -404,6 +413,8 @@ function remapWorkout(temp, w) {
   if (store.get('gt_active') === temp) store.set('gt_active', w.id);
   const pend = store.get('gt_pending_' + temp);
   if (pend) { store.set('gt_pending_' + w.id, pend); store.set('gt_pending_' + temp, null); }
+  const added = store.get(addedKey(temp));
+  if (added) { store.set(addedKey(w.id), added); store.set(addedKey(temp), null); }
   mem.delete('/workouts/' + temp); store.set('gc:/workouts/' + temp, null);
   store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== temp));
   mergeWorkout(w);
@@ -498,7 +509,9 @@ function workoutText(w) {
 // Queue one or more sets for an exercise in the open workout.
 function logSets(id, sets) {
   setCurrent(id);
-  queue({ kind: 'sets', wid: S.view.id, exName: (exById(id) || {}).name, body: { exercise_id: id, sets } });
+  const t = nowIso();
+  queue({ kind: 'sets', wid: S.view.id, exName: (exById(id) || {}).name,
+    body: { exercise_id: id, exercise_added_at: store.get(addedKey(S.view.id), {})[id] || t, sets: sets.map((x) => ({ ...x, logged_at: t })) } });
   S.restAt = Date.now(); store.set('gt_rest', S.restAt);
   paintWorkout();
 }
@@ -1223,7 +1236,7 @@ const A = {
     store.set('gt_localw', [...store.get('gt_localw', []), id]);
     if (pending) store.set('gt_pending_' + id, pending);
     store.set('gt_active', id);
-    queue({ kind: 'newWorkout', wid: id, body: { date, name } });
+    queue({ kind: 'newWorkout', wid: id, body: { date, name, started_at: nowIso() } });
     return id;
   },
   async newWorkout() {
@@ -1236,8 +1249,11 @@ const A = {
     const w = S.wk;
     const cards = workoutCards(w);
     const prs = cards.flatMap((c) => c.sets).filter((s) => s.is_pr).length;
+    // Only the workout in progress gets a finish time; reviewing an old one leaves it alone.
+    if (rid(store.get('gt_active')) === w.id) queue({ kind: 'patchWorkout', wid: w.id, body: { finished_at: nowIso() } });
     store.set('gt_active', null);
     store.set('gt_pending_' + w.id, null);
+    store.set(addedKey(w.id), null);
     S.restAt = 0; store.set('gt_rest', null);
     touchAll();
     goBack();
@@ -1259,8 +1275,7 @@ const A = {
       id = tempId();
       store.set('gt_localex', [...localEx(), { id, name: el.dataset.name, muscle_group: 'Other', equipment: 'Other', last: null, pr: null }]);
     }
-    const wid = S.view.id, p = pendingOf(wid);
-    if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+    addPending(S.view.id, id);
     setCurrent(id);
     await closeModal();
     await render({ soft: true });
@@ -1292,7 +1307,9 @@ const A = {
     if (reps <= 0) { toast('Enter reps'); return; }
     const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
     setCurrent(id);
-    queue({ kind: 'sets', wid, exName: (exById(id) || {}).name, body: { exercise_id: id, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '' }] } });
+    const t = nowIso();
+    queue({ kind: 'sets', wid, exName: (exById(id) || {}).name,
+      body: { exercise_id: id, exercise_added_at: store.get(addedKey(wid), {})[id] || t, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '', logged_at: t }] } });
     if (S.warm[id]) { S.warm[id] = false; const b = $(`[data-a="warm"][data-id="${id}"]`); if (b) b.classList.remove('on'); }
     S.restAt = Date.now(); store.set('gt_rest', S.restAt);
     if (navigator.vibrate) navigator.vibrate(12);
@@ -1461,7 +1478,7 @@ const A = {
     // A workout that never reached the server only needs forgetting, unless it is being sent right now.
     if (id > 0 || outbox.some((op) => op.wid === id)) queue({ kind: 'delWorkout', wid: id });
     if (rid(store.get('gt_active')) === id) store.set('gt_active', null);
-    store.set('gt_pending_' + id, null);
+    store.set('gt_pending_' + id, null); store.set(addedKey(id), null);
     store.set('gt_localw', store.get('gt_localw', []).filter((x) => x !== id));
     mem.delete('/workouts/' + id); store.set('gc:/workouts/' + id, null);
     touchAll();
@@ -1507,13 +1524,13 @@ const A = {
   },
   addToWorkout(el) {
     const id = +el.dataset.id, wid = store.get('gt_active');
-    const p = pendingOf(wid);
-    if (!p.includes(id)) store.set('gt_pending_' + wid, [...p, id]);
+    addPending(wid, id);
     go({ type: 'workout', id: wid });
   },
   startWith(el) {
     const id = +el.dataset.id, e = exById(id) || S.ex || {};
-    const wid = A.startWorkout(e.name ? `${e.name} session` : 'Workout', [id]);
+    const wid = A.startWorkout(e.name ? `${e.name} session` : 'Workout');
+    addPending(wid, id);
     go({ type: 'workout', id: wid });
   },
   editBw(el) {

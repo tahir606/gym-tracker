@@ -9,12 +9,14 @@ const setSchema = {
     rpe: { type: 'number', description: 'Optional rate of perceived exertion, 1-10' },
     warmup: { type: 'boolean', description: 'Warm-up sets are excluded from PRs and volume' },
     notes: { type: 'string' },
+    logged_at: { type: 'string', description: 'Optional ISO-8601 time the set was done; defaults to now' },
   },
   required: ['weight', 'reps'],
 };
 const date = { type: 'string', description: 'YYYY-MM-DD. Defaults to today (UTC) - pass it explicitly when you know the user\'s local date.' };
 const exerciseRef = { type: 'string', description: 'Exercise name (case-insensitive) or numeric id. Unknown names are created automatically.' };
 const obj = (properties, required = []) => ({ type: 'object', properties, required });
+const time = (what) => ({ type: 'string', description: `Optional ISO-8601 time ${what}` });
 
 const tools = [
   {
@@ -24,14 +26,16 @@ const tools = [
       date,
       name: { type: 'string', description: 'e.g. "Push day"' },
       notes: { type: 'string' },
-      exercises: { type: 'array', items: obj({ exercise: exerciseRef, sets: { type: 'array', items: setSchema } }, ['exercise', 'sets']) },
+      started_at: time('the workout started; defaults to now'),
+      finished_at: time('the workout finished'),
+      exercises: { type: 'array', items: obj({ exercise: exerciseRef, added_at: time('this exercise was started'), sets: { type: 'array', items: setSchema } }, ['exercise', 'sets']) },
     }),
     run: (db, a) => core.createWorkout(db, a),
   },
   {
     name: 'add_sets',
     description: 'Add one or more sets of an exercise to an existing workout.',
-    inputSchema: obj({ workout_id: { type: 'integer' }, exercise: exerciseRef, sets: { type: 'array', items: setSchema } }, ['workout_id', 'exercise', 'sets']),
+    inputSchema: obj({ workout_id: { type: 'integer' }, exercise: exerciseRef, exercise_added_at: time('this exercise was started in the workout'), sets: { type: 'array', items: setSchema } }, ['workout_id', 'exercise', 'sets']),
     run: (db, a) => core.addSets(db, a.workout_id, a),
   },
   {
@@ -48,8 +52,8 @@ const tools = [
   },
   {
     name: 'update_workout',
-    description: 'Change a workout\'s name, date or notes.',
-    inputSchema: obj({ workout_id: { type: 'integer' }, name: { type: 'string' }, date, notes: { type: 'string' } }, ['workout_id']),
+    description: 'Change a workout\'s name, date, notes, or start/finish times.',
+    inputSchema: obj({ workout_id: { type: 'integer' }, name: { type: 'string' }, date, notes: { type: 'string' }, started_at: time('the workout started'), finished_at: time('the workout finished') }, ['workout_id']),
     run: (db, a) => core.updateWorkout(db, a.workout_id, a),
   },
   {

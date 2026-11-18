@@ -15,6 +15,7 @@ Data lives in a D1 (SQLite) database. No build step, no framework, no runtime de
 - **Body weight log** with a smoothed trend line.
 - **Installable, offline-first app (PWA)** - add it to your home screen; it opens without signal, shows your last-synced data on every screen, and queues everything you log (new workouts, sets, edits, body weight) until you are back online.
 - **Light and dark themes.**
+- **Timestamps** - each workout records when it started and finished, each exercise when it was added, and each set when it was logged (device time, so offline logging keeps real times). Returned by the API and MCP tools.
 - **MCP server** with 16 tools, protected by the same access key as the app.
 
 ## Deploy your own

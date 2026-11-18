@@ -18,12 +18,20 @@ const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const num = (v, d = null) => (v === undefined || v === null || v === '' || !Number.isFinite(+v) ? d : +v);
 const str = (v, d = '') => (v === undefined || v === null ? d : String(v).trim());
 
+// An ISO timestamp from the client, normalised to UTC; null when missing or unreadable.
+function ts(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const d = new Date(v);
+  return isNaN(d) ? null : d.toISOString();
+}
+const nowIso = () => new Date().toISOString();
+
 function cleanSet(s) {
   const weight = num(s.weight, 0);
   const reps = Math.round(num(s.reps, 0));
   if (weight < 0 || reps < 0) throw new AppError('weight and reps must be zero or more');
   const rpe = num(s.rpe);
-  return { weight, reps, rpe, is_warmup: s.warmup || s.is_warmup ? 1 : 0, notes: str(s.notes) };
+  return { weight, reps, rpe, is_warmup: s.warmup || s.is_warmup ? 1 : 0, notes: str(s.notes), logged_at: ts(s.logged_at) };
 }
 
 // ---------- settings ----------
@@ -116,7 +124,11 @@ export async function updateExercise(db, id, data) {
 }
 
 export async function deleteExercise(db, id) {
-  await db.batch([db.prepare('DELETE FROM sets WHERE exercise_id=?').bind(id), db.prepare('DELETE FROM exercises WHERE id=?').bind(id)]);
+  await db.batch([
+    db.prepare('DELETE FROM sets WHERE exercise_id=?').bind(id),
+    db.prepare('DELETE FROM workout_exercises WHERE exercise_id=?').bind(id),
+    db.prepare('DELETE FROM exercises WHERE id=?').bind(id),
+  ]);
   return { deleted: true };
 }
 
@@ -220,12 +232,14 @@ export async function listWorkouts(db, { limit = 30, offset = 0, from, to } = {}
 }
 
 export async function getWorkout(db, id, extraExerciseIds = []) {
-  const w = await db.prepare('SELECT id, date, name, notes FROM workouts WHERE id=?').bind(id).first();
+  const w = await db.prepare('SELECT id, date, name, notes, started_at, finished_at FROM workouts WHERE id=?').bind(id).first();
   if (!w) throw new AppError('Workout not found', 404);
   const { results: sets } = await db
     .prepare(
-      `SELECT s.id, s.exercise_id, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, e.name, e.muscle_group
-       FROM sets s JOIN exercises e ON e.id=s.exercise_id WHERE s.workout_id=? ORDER BY s.id`
+      `SELECT s.id, s.exercise_id, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, s.logged_at, e.name, e.muscle_group, we.added_at
+       FROM sets s JOIN exercises e ON e.id=s.exercise_id
+       LEFT JOIN workout_exercises we ON we.workout_id=s.workout_id AND we.exercise_id=s.exercise_id
+       WHERE s.workout_id=? ORDER BY s.id`
     )
     .bind(id)
     .all();
@@ -258,7 +272,7 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
   let volume = 0;
   for (const s of sets) {
     let ex = exercises.find((x) => x.exercise_id === s.exercise_id);
-    if (!ex) exercises.push((ex = { exercise_id: s.exercise_id, name: s.name, muscle_group: s.muscle_group, sets: [] }));
+    if (!ex) exercises.push((ex = { exercise_id: s.exercise_id, name: s.name, muscle_group: s.muscle_group, added_at: s.added_at || null, sets: [] }));
     let is_pr = false;
     if (!s.is_warmup) {
       volume += s.weight * s.reps;
@@ -269,17 +283,20 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
         best[s.exercise_id] = sc;
       }
     }
-    ex.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, notes: s.notes, e1rm: e1rm(s), is_pr });
+    ex.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, notes: s.notes, logged_at: s.logged_at, e1rm: e1rm(s), is_pr });
   }
   return { ...w, set_count: sets.length, volume: round(volume), exercises, previous };
 }
 
-async function insertSets(db, workoutId, exerciseId, sets) {
+// addedAt: when the exercise was added to the workout; kept from the first time it is sent.
+async function insertSets(db, workoutId, exerciseId, sets, addedAt) {
   if (!Array.isArray(sets) || !sets.length) return;
-  const stmt = db.prepare('INSERT INTO sets (workout_id, exercise_id, weight, reps, rpe, is_warmup, notes) VALUES (?,?,?,?,?,?,?)');
-  await db.batch(
-    sets.map(cleanSet).map((s) => stmt.bind(workoutId, exerciseId, s.weight, s.reps, s.rpe, s.is_warmup, s.notes))
-  );
+  const clean = sets.map(cleanSet).map((s) => ({ ...s, logged_at: s.logged_at || nowIso() }));
+  const stmt = db.prepare('INSERT INTO sets (workout_id, exercise_id, weight, reps, rpe, is_warmup, notes, logged_at) VALUES (?,?,?,?,?,?,?,?)');
+  await db.batch([
+    db.prepare('INSERT OR IGNORE INTO workout_exercises (workout_id, exercise_id, added_at) VALUES (?,?,?)').bind(workoutId, exerciseId, ts(addedAt) || clean[0].logged_at),
+    ...clean.map((s) => stmt.bind(workoutId, exerciseId, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, s.logged_at)),
+  ]);
 }
 
 export async function createWorkout(db, data = {}) {
@@ -288,11 +305,15 @@ export async function createWorkout(db, data = {}) {
   // Resolve every exercise first so a bad reference does not leave a half-written workout.
   const blocks = [];
   for (const b of data.exercises || []) {
-    blocks.push({ ex: await resolveExercise(db, b.exercise_id ?? b.exercise ?? b.name), sets: (b.sets || []).map(cleanSet) });
+    blocks.push({ ex: await resolveExercise(db, b.exercise_id ?? b.exercise ?? b.name), sets: b.sets || [], added_at: b.added_at });
+    blocks.at(-1).sets.forEach(cleanSet); // validate before writing anything
   }
-  const r = await db.prepare('INSERT INTO workouts (date, name, notes) VALUES (?,?,?)').bind(date, str(data.name) || 'Workout', str(data.notes)).run();
+  const r = await db
+    .prepare('INSERT INTO workouts (date, name, notes, started_at, finished_at) VALUES (?,?,?,?,?)')
+    .bind(date, str(data.name) || 'Workout', str(data.notes), ts(data.started_at) || nowIso(), ts(data.finished_at))
+    .run();
   const id = r.meta.last_row_id;
-  for (const b of blocks) await insertSets(db, id, b.ex.id, b.sets);
+  for (const b of blocks) await insertSets(db, id, b.ex.id, b.sets, b.added_at);
   return getWorkout(db, id);
 }
 
@@ -301,14 +322,25 @@ export async function updateWorkout(db, id, data) {
   if (!w) throw new AppError('Workout not found', 404);
   if (data.date !== undefined && !isDate(data.date)) throw new AppError('date must be YYYY-MM-DD');
   await db
-    .prepare('UPDATE workouts SET date=?, name=?, notes=? WHERE id=?')
-    .bind(data.date ?? w.date, data.name !== undefined ? str(data.name) || 'Workout' : w.name, data.notes !== undefined ? str(data.notes) : w.notes, id)
+    .prepare('UPDATE workouts SET date=?, name=?, notes=?, started_at=?, finished_at=? WHERE id=?')
+    .bind(
+      data.date ?? w.date,
+      data.name !== undefined ? str(data.name) || 'Workout' : w.name,
+      data.notes !== undefined ? str(data.notes) : w.notes,
+      data.started_at !== undefined ? ts(data.started_at) : w.started_at,
+      data.finished_at !== undefined ? ts(data.finished_at) : w.finished_at,
+      id
+    )
     .run();
   return getWorkout(db, id);
 }
 
 export async function deleteWorkout(db, id) {
-  await db.batch([db.prepare('DELETE FROM sets WHERE workout_id=?').bind(id), db.prepare('DELETE FROM workouts WHERE id=?').bind(id)]);
+  await db.batch([
+    db.prepare('DELETE FROM sets WHERE workout_id=?').bind(id),
+    db.prepare('DELETE FROM workout_exercises WHERE workout_id=?').bind(id),
+    db.prepare('DELETE FROM workouts WHERE id=?').bind(id),
+  ]);
   return { deleted: true };
 }
 
@@ -317,7 +349,7 @@ export async function addSets(db, workoutId, data) {
   if (!w) throw new AppError('Workout not found', 404);
   const ex = await resolveExercise(db, data.exercise_id ?? data.exercise ?? data.name);
   const sets = data.sets || [data];
-  await insertSets(db, workoutId, ex.id, sets);
+  await insertSets(db, workoutId, ex.id, sets, data.exercise_added_at);
   return getWorkout(db, workoutId);
 }
 
