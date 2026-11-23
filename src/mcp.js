@@ -8,6 +8,7 @@ const setSchema = {
     reps: { type: 'integer' },
     rpe: { type: 'number', description: 'Optional rate of perceived exertion, 1-10' },
     warmup: { type: 'boolean', description: 'Warm-up sets are excluded from PRs and volume' },
+    support: { type: 'string', enum: ['low', 'high', 'none'], description: 'Help from a spotter or partner. Supported sets count towards volume but never set a PR. Omit or "none" for an unassisted set.' },
     notes: { type: 'string' },
     logged_at: { type: 'string', description: 'Optional ISO-8601 time the set was done; defaults to now' },
   },

@@ -49,6 +49,7 @@ label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 .tile span{font-size:12px;color:var(--muted)}
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;background:var(--gold);color:#2b1f00;vertical-align:middle}
 .badge.w{background:var(--card2);color:var(--muted);border:1px solid var(--line)}
+.badge.sp{background:none;color:var(--accent);border:1px solid var(--accent);font-weight:600}
 .set{display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;padding:8px 2px;border-top:1px solid var(--line);cursor:pointer;font-variant-numeric:tabular-nums}
 .set .n{color:var(--muted);font-size:13px}
 .addset{display:grid;grid-template-columns:1fr 1fr 46px 52px;gap:8px;margin-top:10px}
@@ -155,8 +156,11 @@ body.locked{overflow:hidden}
 .stepper button{background:none;border:0;font-size:24px;font-weight:500;min-height:52px;color:var(--text);padding:0}
 .stepper button:active{background:var(--line)}
 .stepper input{border:0;border-radius:0;background:none;text-align:center;font-size:20px;font-weight:650;padding:0;min-height:52px;font-variant-numeric:tabular-nums}
-.logrow{display:grid;grid-template-columns:auto 1fr;gap:10px;margin-top:10px}
+.logrow{display:grid;grid-template-columns:auto auto 1fr;gap:8px;margin-top:10px}
 .logrow .btn{min-height:54px;font-size:17px}
+.logrow .toggle{padding-left:12px;padding-right:12px;font-size:15px}
+.logrow .sup{line-height:1.1}
+.logrow .sup small{display:block;font-size:11px;font-weight:600}
 .bwrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px}
 #sync{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));z-index:30;background:var(--gold);color:#2b1f00;font-size:12px;font-weight:700;padding:6px 12px;border-radius:99px;white-space:nowrap}
 .pick.ex{display:block;padding:12px 4px}
@@ -237,7 +241,7 @@ matchMedia('(prefers-color-scheme: light)').addEventListener('change', syncTheme
 const GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Cardio', 'Other'];
 const EQUIP = ['Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Kettlebell', 'Other'];
 
-const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, plates: {}, fold: {}, used: new Set(), restAt: store.get('gt_rest', 0), deferred: false };
+const S = { token: store.get('gt_token', ''), tab: 'home', view: null, unit: store.get('gt_unit', 'kg'), exercises: [], warm: {}, sup: {}, plates: {}, fold: {}, used: new Set(), restAt: store.get('gt_rest', 0), deferred: false };
 
 // ---------- network, cache and offline queue ----------
 async function api(path, method = 'GET', body) {
@@ -437,7 +441,7 @@ function remapExercise(temp, real) {
   try {
     for (const k of Object.keys(localStorage)) if (k.startsWith('gt_pending_')) store.set(k, store.get(k, []).map((x) => (x === temp ? real : x)));
   } catch {}
-  for (const m of [S.warm, S.plates]) if (temp in m) { m[real] = m[temp]; delete m[temp]; }
+  for (const m of [S.warm, S.sup, S.plates]) if (temp in m) { m[real] = m[temp]; delete m[temp]; }
   store.set('gt_localex', localEx().filter((e) => e.id !== temp));
   touchAll();
   refresh('/exercises').then((d) => { S.exercises = d; softRender(); }).catch(() => {});
@@ -543,7 +547,12 @@ if (window.visualViewport) {
 const unitOf = (s) => (/^plates\b/.test(s.notes || '') ? 'plates' : S.unit);
 const noteOf = (s) => (s.notes || '').replace(/^plates(\s*·\s*)?/, '');
 const setText = (s) => (s.weight > 0 ? `${fmt(s.weight)} ${unitOf(s)}${s.reps ? ` × ${s.reps}` : ''}` : `${s.reps} reps`);
-const shortSet = (s) => (s.weight > 0 ? `${fmt(s.weight)}${unitOf(s) === 'plates' ? ' pl' : ''}${s.reps ? `×${s.reps}` : ''}` : `${s.reps}`);
+const shortSet = (s) => (s.weight > 0 ? `${fmt(s.weight)}${unitOf(s) === 'plates' ? ' pl' : ''}${s.reps ? `×${s.reps}` : ''}` : `${s.reps}`) + (s.support ? ` (${s.support} sup)` : '');
+// Help from a spotter or partner: none → low → high.
+const SUP_NEXT = { '': 'low', low: 'high', high: '' };
+const supLabel = (v) => (v ? `${v[0].toUpperCase()}${v.slice(1)} support` : 'No support');
+const supBadge = (s) => (s.support ? ` <span class="badge sp">${s.support} support</span>` : '');
+const supBtn = (v) => `Support<small>${v || 'off'}</small>`;
 const recText = (r) => `${fmt(r.weight)} ${r.unit || S.unit}${r.reps ? ` × ${r.reps}` : ''}`;
 // "3 days ago" style age of a YYYY-MM-DD date.
 function ago(d) {
@@ -1001,14 +1010,14 @@ function workoutCards(w) {
   for (const op of outbox) {
     if (rid(op.wid) !== w.id) continue;
     if (op.kind === 'sets') {
-      for (const st of op.body.sets) card(rid(op.body.exercise_id)).sets.push({ id: op.id, weight: +st.weight, reps: +st.reps, is_warmup: st.warmup ? 1 : 0, notes: st.notes || '', saving: true });
+      for (const st of op.body.sets) card(rid(op.body.exercise_id)).sets.push({ id: op.id, weight: +st.weight, reps: +st.reps, is_warmup: st.warmup ? 1 : 0, support: st.support || null, notes: st.notes || '', saving: true });
     }
     if (op.kind === 'editSet' || op.kind === 'delSet') {
       for (const c of cards) {
         const i = c.sets.findIndex((x) => x.id === op.setId);
         if (i < 0) continue;
         if (op.kind === 'delSet') c.sets.splice(i, 1);
-        else { const b = op.body; c.sets[i] = { ...c.sets[i], weight: +b.weight, reps: +b.reps, rpe: b.rpe ? +b.rpe : null, is_warmup: b.warmup ? 1 : 0, notes: b.notes, is_pr: 0 }; }
+        else { const b = op.body; c.sets[i] = { ...c.sets[i], weight: +b.weight, reps: +b.reps, rpe: b.rpe ? +b.rpe : null, is_warmup: b.warmup ? 1 : 0, support: b.support || null, notes: b.notes, is_pr: 0 }; }
       }
     }
   }
@@ -1024,7 +1033,7 @@ function setsHtml(c) {
   let n = 0;
   return c.sets.map((s) => `<div class="set${s.saving ? ' saving' : ''}" data-a="${s.saving ? 'pendingSet' : 'setMenu'}" data-id="${s.id}">
     <div class="n">${s.is_warmup ? 'W' : ++n}</div>
-    <div>${setText(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
+    <div>${setText(s)}${supBadge(s)}${s.rpe ? ` <span class="muted small">RPE ${fmt(s.rpe)}</span>` : ''}${noteOf(s) ? ` <span class="muted small">· ${esc(noteOf(s))}</span>` : ''}</div>
     <div>${s.saving ? '<span class="muted small">saving…</span>' : s.is_pr ? '<span class="badge">PR</span>' : s.is_warmup ? '<span class="badge w">warm-up</span>' : ''}</div></div>`).join('');
 }
 function totalsText(cards) {
@@ -1131,6 +1140,7 @@ async function vWorkout(id) {
             <button data-a="step" data-f="r" data-id="${x}" data-d="1" aria-label="More reps">+</button></div></div>
       </div>
       <div class="logrow"><button class="btn toggle ${S.warm[x] ? 'on' : ''}" data-a="warm" data-id="${x}">Warm-up</button>
+        <button class="btn toggle sup ${S.sup[x] ? 'on' : ''}" data-a="sup" data-id="${x}" aria-label="Support: ${S.sup[x] || 'off'}. Tap to change">${supBtn(S.sup[x])}</button>
         <button class="btn primary" data-a="addSet" data-id="${x}">Log set</button></div></div></div>`;
   };
   return `<div class="whdr"><button class="btn ghost" data-a="back" aria-label="Back">←</button>
@@ -1344,6 +1354,11 @@ const A = {
   },
   dropPending(el) { store.set('gt_pending_' + S.view.id, pendingOf(S.view.id).filter((x) => x !== +el.dataset.id)); render({ soft: true }); },
   warm(el) { const id = el.dataset.id; S.warm[id] = !S.warm[id]; el.classList.toggle('on', S.warm[id]); },
+  sup(el) {
+    const id = el.dataset.id, v = SUP_NEXT[S.sup[id] || ''];
+    S.sup[id] = v; el.classList.toggle('on', !!v); el.innerHTML = supBtn(v);
+    el.setAttribute('aria-label', `Support: ${v || 'off'}. Tap to change`);
+  },
   toggleUnit(el) {
     const id = +el.dataset.id;
     const c = workoutCards(S.wk).find((x) => x.exercise_id === id);
@@ -1369,8 +1384,9 @@ const A = {
     setCurrent(id);
     const t = nowIso();
     queue({ kind: 'sets', wid, exName: (exById(id) || {}).name,
-      body: { exercise_id: id, exercise_added_at: store.get(addedKey(wid), {})[id] || t, sets: [{ weight, reps, warmup: !!S.warm[id], notes: usesPlates(S.wk, c) ? 'plates' : '', logged_at: t }] } });
+      body: { exercise_id: id, exercise_added_at: store.get(addedKey(wid), {})[id] || t, sets: [{ weight, reps, warmup: !!S.warm[id], support: S.sup[id] || null, notes: usesPlates(S.wk, c) ? 'plates' : '', logged_at: t }] } });
     if (S.warm[id]) { S.warm[id] = false; const b = $(`[data-a="warm"][data-id="${id}"]`); if (b) b.classList.remove('on'); }
+    if (S.sup[id]) { const b = $(`[data-a="sup"][data-id="${id}"]`); S.sup[id] = ''; if (b) { b.classList.remove('on'); b.innerHTML = supBtn(''); } }
     S.restAt = Date.now(); store.set('gt_rest', S.restAt);
     if (navigator.vibrate) navigator.vibrate(12);
     paintWorkout();
@@ -1391,12 +1407,13 @@ const A = {
       <div><label for="es-r">Reps</label><input id="es-r" type="number" inputmode="numeric" value="${s.reps}"></div></div>
       <div class="grid2"><div><label for="es-rpe">RPE (optional)</label><input id="es-rpe" type="number" inputmode="decimal" step="0.5" min="1" max="10" value="${fmt(s.rpe)}"></div>
       <div><label for="es-wu">Type</label><select id="es-wu"><option value="0">Working set</option><option value="1"${s.is_warmup ? ' selected' : ''}>Warm-up</option></select></div></div>
+      <label for="es-sp">Support</label><select id="es-sp">${['', 'low', 'high'].map((v) => `<option value="${v}"${(s.support || '') === v ? ' selected' : ''}>${supLabel(v)}</option>`).join('')}</select>
       <label for="es-n">Note</label><input id="es-n" value="${esc(s.notes)}" enterkeyhint="done">
       <div class="grid2" style="margin-top:16px"><button class="btn danger" data-a="delSet" data-id="${s.id}">Delete set</button><button class="btn primary" data-a="saveSet" data-id="${s.id}">Save</button></div>`);
   },
   async saveSet(el) {
     const setId = +el.dataset.id;
-    const body = { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', notes: $('#es-n').value };
+    const body = { weight: $('#es-w').value || 0, reps: $('#es-r').value || 0, rpe: $('#es-rpe').value || null, warmup: $('#es-wu').value === '1', support: $('#es-sp').value || null, notes: $('#es-n').value };
     outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
     queue({ kind: 'editSet', wid: S.wk.id, setId, body });
     await closeModal();
@@ -1491,6 +1508,7 @@ const A = {
       ['Edit', 'editSet', { id }],
       ['Duplicate', 'dupSet', { id }],
       [s.is_warmup ? 'Mark as working set' : 'Mark as warm-up', 'toggleWarmSet', { id }],
+      ...['low', 'high', ''].filter((v) => v !== (s.support || '')).map((v) => [v ? `Mark as ${v} support` : 'Remove support', 'setSupport', { id, v }]),
       ['Delete set', 'delSet', { id }, { danger: true }],
     ]);
   },
@@ -1547,11 +1565,11 @@ const A = {
   },
   repeatSet(el) {
     const id = +el.dataset.id, s = workoutCards(S.wk).find((x) => x.exercise_id === id).sets.at(-1);
-    logSets(id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' }]);
+    logSets(id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, support: s.support || null, notes: s.notes || '' }]);
   },
   copyLast(el) {
     const id = +el.dataset.id, prev = prevOf(S.wk, id);
-    logSets(id, prev.sets.map((s) => ({ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' })));
+    logSets(id, prev.sets.map((s) => ({ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, support: s.support || null, notes: s.notes || '' })));
     toast(`Added ${prev.sets.length} set${prev.sets.length === 1 ? '' : 's'} from ${niceDate(prev.date)}`);
   },
   removeExercise(el) {
@@ -1568,12 +1586,18 @@ const A = {
   },
   dupSet(el) {
     const id = +el.dataset.id, c = workoutCards(S.wk).find((x) => x.sets.some((s) => s.id === id)), s = c.sets.find((x) => x.id === id);
-    logSets(c.exercise_id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, notes: s.notes || '' }]);
+    logSets(c.exercise_id, [{ weight: s.weight, reps: s.reps, warmup: !!s.is_warmup, support: s.support || null, notes: s.notes || '' }]);
   },
   toggleWarmSet(el) {
     const setId = +el.dataset.id, s = workoutCards(S.wk).flatMap((c) => c.sets).find((x) => x.id === setId);
     outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
-    queue({ kind: 'editSet', wid: S.wk.id, setId, body: { weight: s.weight, reps: s.reps, rpe: s.rpe || null, warmup: !s.is_warmup, notes: s.notes || '' } });
+    queue({ kind: 'editSet', wid: S.wk.id, setId, body: { weight: s.weight, reps: s.reps, rpe: s.rpe || null, warmup: !s.is_warmup, support: s.support || null, notes: s.notes || '' } });
+    paintWorkout();
+  },
+  setSupport(el) {
+    const setId = +el.dataset.id, s = workoutCards(S.wk).flatMap((c) => c.sets).find((x) => x.id === setId);
+    outbox = outbox.filter((o) => !(o.kind === 'editSet' && o.setId === setId && o.id !== sendingId));
+    queue({ kind: 'editSet', wid: S.wk.id, setId, body: { weight: s.weight, reps: s.reps, rpe: s.rpe || null, warmup: !!s.is_warmup, support: el.dataset.v || null, notes: s.notes || '' } });
     paintWorkout();
   },
   async editExerciseId(el) {
