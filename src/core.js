@@ -25,13 +25,20 @@ function ts(v) {
   return isNaN(d) ? null : d.toISOString();
 }
 const nowIso = () => new Date().toISOString();
+// Spotter or partner help on a set: 'low', 'high' or null (none).
+function support(v) {
+  if (v === undefined || v === null || v === '' || v === false || v === 'none') return null;
+  const x = String(v).toLowerCase();
+  if (x === 'low' || x === 'high') return x;
+  throw new AppError('support must be "low", "high" or none');
+}
 
 function cleanSet(s) {
   const weight = num(s.weight, 0);
   const reps = Math.round(num(s.reps, 0));
   if (weight < 0 || reps < 0) throw new AppError('weight and reps must be zero or more');
   const rpe = num(s.rpe);
-  return { weight, reps, rpe, is_warmup: s.warmup || s.is_warmup ? 1 : 0, notes: str(s.notes), logged_at: ts(s.logged_at) };
+  return { weight, reps, rpe, is_warmup: s.warmup || s.is_warmup ? 1 : 0, support: support(s.support), notes: str(s.notes), logged_at: ts(s.logged_at) };
 }
 
 // ---------- settings ----------
@@ -71,7 +78,7 @@ export async function listExercises(db, { search } = {}) {
   // Per exercise: the best set ever (by estimated 1RM, or most reps for bodyweight work) and the last session's sets.
   const { results: sets } = await db
     .prepare(
-      `SELECT s.exercise_id, s.workout_id, s.weight, s.reps, s.is_warmup, s.notes, w.date
+      `SELECT s.exercise_id, s.workout_id, s.weight, s.reps, s.is_warmup, s.support, s.notes, w.date
        FROM sets s JOIN workouts w ON w.id=s.workout_id ORDER BY w.date, w.id, s.id`
     )
     .all();
@@ -93,7 +100,7 @@ export async function listExercises(db, { search } = {}) {
     e.last = {
       workout_id: lastId,
       date: list.at(-1).date,
-      sets: lastSets.map((s) => ({ weight: s.weight, reps: s.reps, is_warmup: s.is_warmup, notes: s.notes })),
+      sets: lastSets.map((s) => ({ weight: s.weight, reps: s.reps, is_warmup: s.is_warmup, support: s.support, notes: s.notes })),
     };
   }
   return results;
@@ -160,7 +167,7 @@ export async function getExercise(db, ref, { limit = 50 } = {}) {
   if (!ex) throw new AppError(`Exercise "${ref}" not found`, 404);
   const { results } = await db
     .prepare(
-      `SELECT s.id, s.workout_id, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, w.date, w.name AS workout_name
+      `SELECT s.id, s.workout_id, s.weight, s.reps, s.rpe, s.is_warmup, s.support, s.notes, w.date, w.name AS workout_name
        FROM sets s JOIN workouts w ON w.id=s.workout_id WHERE s.exercise_id=? ORDER BY w.date DESC, w.id DESC, s.id`
     )
     .bind(ex.id)
@@ -172,7 +179,7 @@ export async function getExercise(db, ref, { limit = 50 } = {}) {
       cur = { workout_id: s.workout_id, date: s.date, workout_name: s.workout_name, sets: [], best_e1rm: 0, top_weight: 0, volume: 0 };
       sessions.push(cur);
     }
-    cur.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, notes: s.notes });
+    cur.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, support: s.support, notes: s.notes });
     if (!s.is_warmup) {
       cur.best_e1rm = Math.max(cur.best_e1rm, e1rm(s));
       cur.top_weight = Math.max(cur.top_weight, s.weight);
@@ -185,7 +192,7 @@ export async function getExercise(db, ref, { limit = 50 } = {}) {
 function recordsFor(sets) {
   const rec = { best_e1rm: null, heaviest: null, most_reps: null, best_volume_set: null };
   for (const s of sets) {
-    if (s.is_warmup) continue;
+    if (s.is_warmup || s.support) continue;
     const entry = { weight: s.weight, reps: s.reps, date: s.date, unit: /^plates\b/.test(s.notes || '') ? 'plates' : null };
     const better = (cur, val, tie) => !cur || val > cur.value || (val === cur.value && tie > (cur.tie ?? 0));
     if (s.weight > 0 && better(rec.best_e1rm, e1rm(s), 0)) rec.best_e1rm = { value: e1rm(s), ...entry };
@@ -201,9 +208,9 @@ function recordsFor(sets) {
 export async function getPRs(db) {
   const { results } = await db
     .prepare(
-      `SELECT s.exercise_id, e.name, e.muscle_group, s.weight, s.reps, s.is_warmup, s.notes, w.date
+      `SELECT s.exercise_id, e.name, e.muscle_group, s.weight, s.reps, s.is_warmup, s.support, s.notes, w.date
        FROM sets s JOIN workouts w ON w.id=s.workout_id JOIN exercises e ON e.id=s.exercise_id
-       WHERE s.is_warmup=0 ORDER BY w.date, w.id, s.id`
+       WHERE s.is_warmup=0 AND s.support IS NULL ORDER BY w.date, w.id, s.id`
     )
     .all();
   const by = new Map();
@@ -244,7 +251,7 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
   if (!w) throw new AppError('Workout not found', 404);
   const { results: sets } = await db
     .prepare(
-      `SELECT s.id, s.exercise_id, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, s.logged_at, e.name, e.muscle_group, we.added_at
+      `SELECT s.id, s.exercise_id, s.weight, s.reps, s.rpe, s.is_warmup, s.support, s.notes, s.logged_at, e.name, e.muscle_group, we.added_at
        FROM sets s JOIN exercises e ON e.id=s.exercise_id
        LEFT JOIN workout_exercises we ON we.workout_id=s.workout_id AND we.exercise_id=s.exercise_id
        WHERE s.workout_id=? ORDER BY s.id`
@@ -257,11 +264,11 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
   if (exIds.length) {
     const before = `(w.date<? OR (w.date=? AND w.id<?))`;
     const prevStmt = db.prepare(
-      `SELECT s.workout_id, s.weight, s.reps, s.is_warmup, s.notes, w.date FROM sets s JOIN workouts w ON w.id=s.workout_id
+      `SELECT s.workout_id, s.weight, s.reps, s.is_warmup, s.support, s.notes, w.date FROM sets s JOIN workouts w ON w.id=s.workout_id
        WHERE s.exercise_id=? AND ${before} ORDER BY w.date DESC, w.id DESC, s.id LIMIT 40`
     );
     const bestStmt = db.prepare(
-      `SELECT MAX(${SCORE}) AS best FROM sets s JOIN workouts w ON w.id=s.workout_id WHERE s.is_warmup=0 AND s.exercise_id=? AND ${before}`
+      `SELECT MAX(${SCORE}) AS best FROM sets s JOIN workouts w ON w.id=s.workout_id WHERE s.is_warmup=0 AND s.support IS NULL AND s.exercise_id=? AND ${before}`
     );
     const res = await db.batch(exIds.flatMap((e) => [prevStmt.bind(e, w.date, w.date, id), bestStmt.bind(e, w.date, w.date, id)]));
     exIds.forEach((e, i) => {
@@ -270,7 +277,7 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
         const first = rows[0].workout_id;
         previous[e] = {
           date: rows[0].date,
-          sets: rows.filter((r) => r.workout_id === first).map((r) => ({ weight: r.weight, reps: r.reps, is_warmup: r.is_warmup, notes: r.notes })),
+          sets: rows.filter((r) => r.workout_id === first).map((r) => ({ weight: r.weight, reps: r.reps, is_warmup: r.is_warmup, support: r.support, notes: r.notes })),
         };
       }
       best[e] = res[i * 2 + 1].results[0]?.best ?? null;
@@ -285,13 +292,13 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
     if (!s.is_warmup) {
       volume += s.weight * s.reps;
       const sc = score(s);
-      // Only flag a PR when there is earlier history to beat.
-      if (best[s.exercise_id] !== null && sc > best[s.exercise_id] + 1e-9) {
+      // Only flag a PR when there is earlier history to beat, and never on a supported set.
+      if (!s.support && best[s.exercise_id] !== null && sc > best[s.exercise_id] + 1e-9) {
         is_pr = true;
         best[s.exercise_id] = sc;
       }
     }
-    ex.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, notes: s.notes, logged_at: s.logged_at, e1rm: e1rm(s), is_pr });
+    ex.sets.push({ id: s.id, weight: s.weight, reps: s.reps, rpe: s.rpe, is_warmup: s.is_warmup, support: s.support, notes: s.notes, logged_at: s.logged_at, e1rm: e1rm(s), is_pr });
   }
   return { ...w, set_count: sets.length, volume: round(volume), exercises, previous };
 }
@@ -300,10 +307,10 @@ export async function getWorkout(db, id, extraExerciseIds = []) {
 async function insertSets(db, workoutId, exerciseId, sets, addedAt) {
   if (!Array.isArray(sets) || !sets.length) return;
   const clean = sets.map(cleanSet).map((s) => ({ ...s, logged_at: s.logged_at || nowIso() }));
-  const stmt = db.prepare('INSERT INTO sets (workout_id, exercise_id, weight, reps, rpe, is_warmup, notes, logged_at) VALUES (?,?,?,?,?,?,?,?)');
+  const stmt = db.prepare('INSERT INTO sets (workout_id, exercise_id, weight, reps, rpe, is_warmup, support, notes, logged_at) VALUES (?,?,?,?,?,?,?,?,?)');
   await db.batch([
     db.prepare('INSERT OR IGNORE INTO workout_exercises (workout_id, exercise_id, added_at) VALUES (?,?,?)').bind(workoutId, exerciseId, ts(addedAt) || clean[0].logged_at),
-    ...clean.map((s) => stmt.bind(workoutId, exerciseId, s.weight, s.reps, s.rpe, s.is_warmup, s.notes, s.logged_at)),
+    ...clean.map((s) => stmt.bind(workoutId, exerciseId, s.weight, s.reps, s.rpe, s.is_warmup, s.support, s.notes, s.logged_at)),
   ]);
 }
 
@@ -369,9 +376,10 @@ export async function updateSet(db, id, data) {
     reps: data.reps ?? s.reps,
     rpe: data.rpe !== undefined ? data.rpe : s.rpe,
     is_warmup: data.warmup ?? data.is_warmup ?? s.is_warmup,
+    support: data.support !== undefined ? data.support : s.support,
     notes: data.notes ?? s.notes,
   });
-  await db.prepare('UPDATE sets SET weight=?, reps=?, rpe=?, is_warmup=?, notes=? WHERE id=?').bind(c.weight, c.reps, c.rpe, c.is_warmup, c.notes, id).run();
+  await db.prepare('UPDATE sets SET weight=?, reps=?, rpe=?, is_warmup=?, support=?, notes=? WHERE id=?').bind(c.weight, c.reps, c.rpe, c.is_warmup, c.support, c.notes, id).run();
   return getWorkout(db, s.workout_id);
 }
 
@@ -457,7 +465,7 @@ export async function getInsights(db, { from, today: clientToday } = {}) {
   const [setsR, wkR, bwR, settings] = await Promise.all([
     db
       .prepare(
-        `SELECT s.weight, s.reps, s.is_warmup, s.notes, s.exercise_id, e.name, e.muscle_group, e.equipment, w.id AS workout_id, w.date
+        `SELECT s.weight, s.reps, s.is_warmup, s.support, s.notes, s.exercise_id, e.name, e.muscle_group, e.equipment, w.id AS workout_id, w.date
          FROM sets s JOIN workouts w ON w.id=s.workout_id JOIN exercises e ON e.id=s.exercise_id ORDER BY w.date, w.id, s.id`
       )
       .all(),
@@ -470,7 +478,7 @@ export async function getInsights(db, { from, today: clientToday } = {}) {
   const bw = bwR.results;
   const inRange = (d) => !f || d >= f;
   const isPlates = (s) => /^plates\b/.test(s.notes || '');
-  const isAssisted = (s) => /assist|spot|support|\bsp\b/i.test(s.notes || '');
+  const isAssisted = (s) => !!s.support || /assist|spot|support|\bsp\b/i.test(s.notes || '');
   const dayDiff = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
   const bump = (o, k, n = 1) => (o[k] = (o[k] || 0) + n);
 
@@ -478,6 +486,7 @@ export async function getInsights(db, { from, today: clientToday } = {}) {
   const prState = new Map();
   const prByKey = new Map();
   for (const s of all) {
+    if (s.support) continue;
     const sc = score(s);
     const st = prState.get(s.exercise_id);
     if (!st) prState.set(s.exercise_id, { best: sc, first: s.workout_id });

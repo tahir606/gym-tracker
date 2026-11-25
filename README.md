@@ -8,7 +8,7 @@ Data lives in a D1 (SQLite) database. No build step, no framework, no runtime de
 
 ## Features
 
-- **Workout logging** - exercises, sets, weight, reps, RPE, warm-ups and notes, with last session's numbers shown as you log and a rest timer.
+- **Workout logging** - exercises, sets, weight, reps, RPE, warm-ups, spotter support (low or high) and notes, with last session's numbers shown as you log and a rest timer.
 - **Personal records** - flagged the moment you beat a previous best; estimated 1RM, heaviest weight, most reps and best set volume per exercise.
 - **Exercise library** - 39 common exercises preloaded; add your own. Each has a progress chart and full history.
 - **Insights** - training calendar, workouts/sets/volume per month, weekday and split breakdown, muscle-group balance, rep ranges, progress per exercise, records over time and body-weight trend.
